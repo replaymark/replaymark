@@ -51,6 +51,14 @@ Every push to `develop` publishes `ghcr.io/replaymark/replaymark:develop` and `:
 1. Open a pull request `develop` -> `main` and merge it with a merge commit (not squash or rebase), so the individual commits are analysed.
 2. The push to `main` runs `.github/workflows/release.yml`: after the CI gate, semantic-release creates the tag `vX.Y.Z` and the GitHub release with generated notes, then the image is pushed as `:X.Y.Z`, `:X.Y` and `:latest`. If no commit warrants a release, nothing is published.
 
+After a stable release, the `back-merge` job opens a pull request `main` -> `develop` titled `chore(release): back-merge vX.Y.Z into develop` and enables auto-merge with a merge commit. This makes the tag reachable from `develop`, so prerelease numbering continues from the new version. It is skipped if `develop` already contains `main` or such a pull request is already open. Auto-merge must be allowed in the repository settings; always merge this PR with a merge commit.
+
+Optional GitHub App setup (so the required checks run on the back-merge PR): PRs created with `GITHUB_TOKEN` do not trigger workflows, so the required checks never report. To avoid this:
+
+1. Create a GitHub App with repository permissions Contents: read and Pull requests: write, and install it on this repository.
+2. Add its ID as the secret `RELEASE_APP_ID` and its private key as `RELEASE_APP_PRIVATE_KEY`.
+3. If the app is configured, the job uses it (via `actions/create-github-app-token`); otherwise it falls back to `GITHUB_TOKEN`, and a maintainer re-runs the checks (or closes and reopens the PR) and merges it.
+
 Do not push release tags by hand. Image tags for users are listed in [docs/operations.md](docs/operations.md#image-tags-and-channels).
 
 ## OpenSpec in short
