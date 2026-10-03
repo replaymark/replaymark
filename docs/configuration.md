@@ -42,6 +42,7 @@ The variables are defined and validated in `apps/server/src/env.ts`. Empty value
 |---|---|---|---|
 | `DATA_DIR` | no | `/data` | Directory of the SQLite database (`replaymark.db`). |
 | `TZ` | no | none | Time zone for timestamps in mails, for example `Europe/Berlin`. |
+| `DEFAULT_LANGUAGE` | no | `en` | `en` or `de`. UI language for browsers that are neither German nor English, and mail language of newly created accounts. Existing accounts keep theirs. |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error`. |
 
 ## Listeners and paths (development)

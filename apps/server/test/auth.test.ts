@@ -33,7 +33,13 @@ afterEach(() => handle?.close());
 
 const SETUP_CODE = 'ABCDE-FGHJK';
 
-function setup(opts: { secure?: boolean; withPassword?: boolean } = {}) {
+function setup(
+  opts: {
+    secure?: boolean;
+    withPassword?: boolean;
+    defaultLanguage?: 'en' | 'de';
+  } = {},
+) {
   handle = createTestDb();
   const clock = createFakeClock();
   const db = handle.db;
@@ -49,6 +55,7 @@ function setup(opts: { secure?: boolean; withPassword?: boolean } = {}) {
     cookieSecure: opts.secure ?? true,
     ipOf: () => '1.2.3.4',
     setupCode: () => SETUP_CODE,
+    ...(opts.defaultLanguage ? { defaultLanguage: opts.defaultLanguage } : {}),
   };
   const app = new Hono();
   app.use('*', originCheck());
@@ -479,7 +486,31 @@ describe('first-run setup', () => {
   it('reports required while no account has a password', async () => {
     const { app } = setup({ withPassword: false });
     const res = await app.request('/api/auth/setup');
-    expect(await res.json()).toEqual({ required: true });
+    expect(await res.json()).toEqual({
+      required: true,
+      defaultLanguage: 'en',
+    });
+  });
+
+  it('reports the configured default language', async () => {
+    const { app } = setup({ defaultLanguage: 'de' });
+    const res = await app.request('/api/auth/setup');
+    expect(await res.json()).toMatchObject({ defaultLanguage: 'de' });
+  });
+
+  it('gives the first account the default mail language', async () => {
+    for (const [lang, want] of [
+      [undefined, 'en'],
+      ['de', 'de'],
+    ] as const) {
+      const { app, db } = setup({
+        withPassword: false,
+        defaultLanguage: lang,
+      });
+      await post(app, '/api/auth/setup', body);
+      expect(db.select().from(users).get()?.mailLanguage).toBe(want);
+      handle?.close();
+    }
   });
 
   it('fills account 1, adds the email as recipient, starts a session', async () => {
@@ -514,6 +545,7 @@ describe('first-run setup', () => {
     expect((await app.request('/api/auth/setup')).status).toBe(200);
     expect(await (await app.request('/api/auth/setup')).json()).toEqual({
       required: false,
+      defaultLanguage: 'en',
     });
   });
 
@@ -587,6 +619,7 @@ describe('first-run setup', () => {
     expect(db.select().from(users).all()).toEqual(before);
     expect(await (await app.request('/api/auth/setup')).json()).toEqual({
       required: false,
+      defaultLanguage: 'en',
     });
   });
 
@@ -623,6 +656,7 @@ describe('hash takeover', () => {
     expect(applyHashTakeover(db, HASH, logger)).toBe(true);
     expect(await (await app.request('/api/auth/setup')).json()).toEqual({
       required: false,
+      defaultLanguage: 'en',
     });
     expect((await login(app, PW, 'admin')).status).toBe(200);
   });

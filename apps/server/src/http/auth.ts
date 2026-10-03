@@ -267,6 +267,8 @@ export interface AuthDeps {
   db: Db;
   clock: Clock;
   cookieSecure: boolean;
+  /** Mail language of new accounts and UI fallback (`DEFAULT_LANGUAGE`). */
+  defaultLanguage?: 'en' | 'de';
   /** Current one-time setup code while setup is pending; undefined otherwise. */
   setupCode?: () => string | undefined;
   rateLimiter?: LoginRateLimiter;
@@ -447,6 +449,7 @@ function claimFirstAccount(
   db: Db,
   input: { username: string; email: string; password: string },
   now: number,
+  mailLanguage: 'en' | 'de',
 ): number | undefined {
   return db.transaction((tx) => {
     const t = tx as unknown as Db;
@@ -462,6 +465,7 @@ function claimFirstAccount(
       passwordHash: hashPassword(input.password),
       role: 'admin' as const,
       mustChangePassword: false,
+      mailLanguage,
     };
     let id: number;
     if (first) {
@@ -490,7 +494,12 @@ export function createAuthRoutes(deps: AuthDeps) {
   const tooMany = (c: Context) =>
     c.json(apiError('rate_limited', 'Too many failed attempts'), 429);
   return new Hono()
-    .get('/setup', (c) => c.json({ required: isSetupRequired(db) }))
+    .get('/setup', (c) =>
+      c.json({
+        required: isSetupRequired(db),
+        defaultLanguage: deps.defaultLanguage ?? 'en',
+      }),
+    )
     .post('/setup', async (c) => {
       if (!isSetupRequired(db)) {
         return c.json(apiError('setup_completed', 'Setup is done'), 409);
@@ -513,7 +522,12 @@ export function createAuthRoutes(deps: AuthDeps) {
         limiter.recordFailure(ip);
         return c.json(apiError('invalid_setup_code', 'Wrong setup code'), 401);
       }
-      const id = claimFirstAccount(db, parsed.data, clock.now());
+      const id = claimFirstAccount(
+        db,
+        parsed.data,
+        clock.now(),
+        deps.defaultLanguage ?? 'en',
+      );
       if (id === undefined) {
         return c.json(apiError('setup_completed', 'Setup is done'), 409);
       }

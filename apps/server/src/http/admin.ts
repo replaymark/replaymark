@@ -109,6 +109,8 @@ export interface AdminAppDeps {
   adminUrl?: string;
   callbackUrl: string;
   cookieSecure: boolean;
+  /** Mail language of new accounts (`DEFAULT_LANGUAGE`). */
+  defaultLanguage?: AuthDeps['defaultLanguage'];
   /** Current setup code while setup is pending. */
   setupCode?: AuthDeps['setupCode'];
   /** Directory of the built SPA; static serving is skipped when absent. */
@@ -1109,7 +1111,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
               passwordHash: hashPassword(temporaryPassword),
               role: input.role,
               mustChangePassword: true,
-              mailLanguage: 'de',
+              mailLanguage: deps.defaultLanguage ?? 'en',
               createdAt: now,
             })
             .returning({ id: users.id })

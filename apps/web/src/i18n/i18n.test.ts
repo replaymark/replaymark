@@ -62,4 +62,13 @@ describe('detectLang', () => {
     expect(detectLang(null, 'fr-FR')).toBe('en');
     expect(detectLang('xx', undefined)).toBe('en');
   });
+
+  it('falls back to the instance default for unsupported browser languages', () => {
+    expect(detectLang(null, 'fr-FR', 'de')).toBe('de');
+    expect(detectLang(null, undefined, 'de')).toBe('de');
+    expect(detectLang(null, 'en-US', 'de')).toBe('en');
+    expect(detectLang(null, 'de-DE', 'en')).toBe('de');
+    expect(detectLang('en', 'fr-FR', 'de')).toBe('en');
+    expect(detectLang(null, 'fr-FR')).toBe('en');
+  });
 });
