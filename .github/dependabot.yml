@@ -11,6 +11,10 @@ updates:
       prefix: "fix"
       prefix-development: "chore"
       include: "scope"
+    ignore:
+      # Types must match the Node major the project runs on (.nvmrc).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns: ["*"]
