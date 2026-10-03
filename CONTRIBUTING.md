@@ -37,6 +37,16 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 - Work on a feature branch (`feat/...`, `fix/...`, `chore/...`) created from `develop`, and open the pull request against `develop`.
 - `develop` is merged into `main` for releases; releases are tagged `vX.Y.Z`.
 
+## Releases and images
+
+Every push to `develop` publishes `ghcr.io/replaymark/replaymark:develop` and `:develop-<sha>` (no GitHub release). A release is a merge of `develop` into `main`:
+
+1. On `develop`, bump `version` in `package.json`, `apps/server/package.json` and `apps/web/package.json`, and add a `## [<version>]` section to `CHANGELOG.md`.
+2. Open a pull request `develop` -> `main` and merge it with a merge commit (not squash or rebase).
+3. The push to `main` runs the workflow `.github/workflows/release.yml`: if tag `v<version>` does not exist yet, it runs the CI gate, requires the CHANGELOG section (fails otherwise), pushes `:<version>`, `:<major>.<minor>` and `:latest`, creates the tag `v<version>` and the GitHub release with the CHANGELOG section as notes. If the tag already exists, the release jobs are skipped.
+
+Do not push release tags by hand. Image tags for users are listed in [docs/operations.md](docs/operations.md#image-tags-and-channels).
+
 ## OpenSpec in short
 
 Behaviour changes are specified with [OpenSpec](https://github.com/Fission-AI/OpenSpec) before they are built. A change lives in `openspec/changes/<name>/` with a `proposal.md` (why and what), spec deltas under `specs/`, an optional `design.md` and a `tasks.md` checklist. When a change is done it is archived and its deltas are merged into `openspec/specs/`, which describes the current behaviour. Small fixes, docs and refactors without behaviour change do not need a change. For anything larger, open an issue first so the approach can be agreed.

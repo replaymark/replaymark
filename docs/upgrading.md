@@ -21,6 +21,22 @@
 
    Set `REPLAYMARK_VERSION=<version>` in `.env` to pin a release instead of `latest`.
 
+### Image tags
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Newest stable release (default) |
+| `X.Y.Z` | Exact release, for example `1.1.0` |
+| `X.Y` | Newest patch release of a minor version, for example `1.1` |
+| `develop` | Latest build of the `develop` branch |
+| `develop-<sha>` | A single `develop` build (short commit SHA), for pinning |
+
+All tags are multi-arch (`linux/amd64`, `linux/arm64`).
+
+### Development channel
+
+To try unreleased changes, set `REPLAYMARK_VERSION=develop` in `.env` and run `docker compose pull && docker compose up -d`. Remove the line (or set a release version) to go back. `develop` may be unstable, and its database migrations are not guaranteed to be reversible: back up first and do not use it for data you cannot lose.
+
 ## Database migrations
 
 Migrations run automatically on every start. You do not run anything by hand. Check `docker compose logs` after the upgrade. A downgrade is not supported: restore the backup of the old version instead.

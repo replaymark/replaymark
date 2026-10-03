@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/replaymark/replaymark/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/replaymark/replaymark/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/replaymark/replaymark/actions/workflows/release.yml"><img alt="Build" src="https://github.com/replaymark/replaymark/actions/workflows/release.yml/badge.svg?branch=develop"></a>
   <a href="https://github.com/replaymark/replaymark/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/replaymark/replaymark"></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
   <a href="https://github.com/replaymark/replaymark/pkgs/container/replaymark"><img alt="Container image on GHCR" src="https://img.shields.io/badge/image-ghcr.io%2Freplaymark%2Freplaymark-informational"></a>
@@ -70,6 +70,8 @@ You need a host with Docker (or rootless Podman), a public HTTPS hostname for th
    ```
 
 5. Open `http://127.0.0.1:8081`, create the administrator with the code, then add streamers. Check with `docker exec replaymark node src/cli.ts status`.
+
+The image is published as `latest` (newest release), `X.Y.Z` and `X.Y`. Set `REPLAYMARK_VERSION=develop` in `.env` for the unreleased development channel, which may be unstable ([image tags](docs/operations.md#image-tags-and-channels)).
 
 Details, including building from source, are in [docs/installation.md](docs/installation.md).
 

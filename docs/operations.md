@@ -21,6 +21,24 @@ All commands talk to the running server on `127.0.0.1:8082/internal/*`. They onl
 
 The internal listener is unauthenticated. Whoever can reach it can reset any password, so it is bound to `127.0.0.1`.
 
+## Image tags and channels
+
+The image is `ghcr.io/replaymark/replaymark`. Select a tag with `REPLAYMARK_VERSION` in `.env` (default `latest`).
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Newest stable release (default) |
+| `X.Y.Z` | Exact release, for example `1.1.0` |
+| `X.Y` | Newest patch release of a minor version, for example `1.1` |
+| `develop` | Latest build of the `develop` branch |
+| `develop-<sha>` | A single `develop` build (short commit SHA), for pinning |
+
+All tags are multi-arch (`linux/amd64`, `linux/arm64`).
+
+### Development channel
+
+To try unreleased changes, set `REPLAYMARK_VERSION=develop` in `.env` and run `docker compose pull && docker compose up -d`. Remove the line (or set a release version) to go back. `develop` may be unstable, and its database migrations are not guaranteed to be reversible: back up first and do not use it for data you cannot lose.
+
 ## Healthcheck
 
 `GET http://127.0.0.1:8082/healthz` returns `200` with `{ status, subscriptionsEnabled, lastSyncAt, lastSyncOk }`, or `503` if the database is not reachable. The image uses it as its built-in `HEALTHCHECK` (a node one-liner, no curl needed). Check the state with `docker ps` or `docker inspect --format '{{.State.Health.Status}}' replaymark`.
