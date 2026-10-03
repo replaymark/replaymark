@@ -180,18 +180,18 @@ describe('GET /api/events session binding', () => {
     expect(await endsWithin(reader, 1000)).toBe(true);
   });
 
-  it('ends before delivering an event once the session is gone', async () => {
+  it('delivers nothing after the stream ended with the session', async () => {
     const bus = createBus();
     h = createAdminHarness({
-      events: { bus, registry: createSseRegistry(), pingMs: 60_000 },
+      events: { bus, registry: createSseRegistry(), pingMs: 10 },
     });
     const res = await h.req('/api/events');
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     await h.req('/api/auth/logout', { method: 'POST' });
+    expect(await endsWithin(reader, 1000)).toBe(true);
     bus.publish('subscriptions', { active: 7 });
     const text = await drain(reader, 200);
     expect(text).not.toContain('"active":7');
-    expect(await endsWithin(reader, 1000)).toBe(true);
   });
 
   it('ends after the session expired', async () => {

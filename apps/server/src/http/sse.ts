@@ -41,19 +41,30 @@ export interface SseDeps {
   pingMs?: number;
 }
 
+export function isAdminAccount(db: Db, userId: number): boolean {
+  return (
+    db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.role === 'admin'
+  );
+}
+
 /**
  * Whether the account may see `event`. Live and timeline events need the broadcaster
  * in the account's list, notification and group events the account as owner
  * (administrators see every notification, as on the history page), sync and
  * subscription events an administrator. Anything else is dropped.
  */
-export function mayReceive(db: Db, userId: number, event: BusEvent): boolean {
-  const isAdmin = () =>
-    db
-      .select({ role: users.role })
-      .from(users)
-      .where(eq(users.id, userId))
-      .get()?.role === 'admin';
+export function mayReceive(
+  db: Db,
+  userId: number,
+  event: BusEvent,
+  /** Role known from a recent lookup; skips the per-event role query. */
+  knownAdmin?: boolean,
+): boolean {
+  const isAdmin = () => knownAdmin ?? isAdminAccount(db, userId);
   const follows_ = (broadcasterId: string | undefined) =>
     broadcasterId !== undefined &&
     !!db
@@ -119,22 +130,33 @@ export function sseHandler(deps: SseDeps & { db: Db; clock: Clock }) {
         finish = resolve;
       });
       const ignore = () => {};
-      const alive = (): boolean => {
+      // Session liveness and role are looked up once per ping interval, not per event.
+      let live = false;
+      let admin = false;
+      const refresh = () => {
         try {
-          return sessionAlive(deps.db, deps.clock, sessionId);
+          live = sessionAlive(deps.db, deps.clock, sessionId);
+          admin = live && isAdminAccount(deps.db, userId);
         } catch {
-          return false;
+          live = false;
+          admin = false;
         }
+      };
+      refresh();
+      const end = () => {
+        live = false;
+        admin = false;
+        finish();
       };
       const unsubscribe = deps.bus.subscribe((event) => {
         if (stream.closed || stream.aborted) return;
         let allowed = false;
         try {
-          if (!alive()) {
-            finish();
+          if (!live) {
+            end();
             return;
           }
-          allowed = mayReceive(deps.db, userId, event);
+          allowed = mayReceive(deps.db, userId, event, admin);
         } catch {
           allowed = false;
         }
@@ -145,15 +167,16 @@ export function sseHandler(deps: SseDeps & { db: Db; clock: Clock }) {
       });
       const ping = setInterval(() => {
         if (stream.closed || stream.aborted) return;
-        if (!alive()) {
-          finish();
+        refresh();
+        if (!live) {
+          end();
           return;
         }
         stream.write(': ping\n\n').catch(ignore);
       }, pingMs);
       ping.unref();
-      const deregister = deps.registry.add(finish);
-      stream.onAbort(finish);
+      const deregister = deps.registry.add(end);
+      stream.onAbort(end);
       try {
         await finished;
       } finally {

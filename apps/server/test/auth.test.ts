@@ -44,6 +44,7 @@ function setup(
     defaultLanguage?: 'en' | 'de';
     ipOf?: () => string;
     minFailureMs?: number;
+    dummyHasher?: (pw: string) => Promise<string>;
   } = {},
 ) {
   handle = createTestDb();
@@ -62,6 +63,7 @@ function setup(
     ipOf: opts.ipOf ?? (() => '1.2.3.4'),
     minFailureMs: opts.minFailureMs ?? 0,
     setupCode: () => SETUP_CODE,
+    ...(opts.dummyHasher ? { dummyHasher: opts.dummyHasher } : {}),
     ...(opts.defaultLanguage ? { defaultLanguage: opts.defaultLanguage } : {}),
   };
   const app = new Hono();
@@ -737,18 +739,87 @@ describe('hardening', () => {
     });
   });
 
-  it('at capacity keeps live keys and blocks unknown new ones', () => {
+  it('at capacity evicts the stalest key below the limit instead of blocking everyone', () => {
     const clock = createFakeClock();
     const limiter = createLoginRateLimiter(clock);
-    for (let i = 0; i < LIMITER_MAX_KEYS + 50; i++)
+    for (let i = 0; i < LIMITER_MAX_KEYS + 50; i++) {
       limiter.recordFailure(`ip${i}`, `user${i}`);
-    // ip0 is live and was not evicted; a brand-new key is refused.
-    limiter.recordFailure('ip0');
-    expect(limiter.isBlocked('ip0')).toBe(false);
+      clock.advance(1);
+    }
+    expect(limiter.isBlocked('fresh-ip', 'fresh-user')).toBe(false);
+    limiter.recordFailure('fresh-ip', 'fresh-user');
+    expect(limiter.isBlocked('fresh-ip', 'fresh-user')).toBe(false);
+  });
+
+  it('a username map full of fake keys does not block a fresh first attempt', async () => {
+    const limiter = createLoginRateLimiter(createFakeClock());
+    for (let i = 0; i < LIMITER_MAX_KEYS; i++)
+      limiter.recordFailure(`ip${i}`, `fake${i}`);
+    expect(limiter.reserve('1.1.1.1', 'fresh')).toBeTypeOf('function');
+  });
+
+  it('blocks new keys only when every tracked key is at the limit', () => {
+    const limiter = createLoginRateLimiter(createFakeClock());
+    for (let i = 0; i < LIMITER_MAX_KEYS; i++)
+      for (let f = 0; f < 5; f++) limiter.recordFailure(`ip${i}`);
     expect(limiter.isBlocked('fresh-ip')).toBe(true);
-    // Once the window passed, expired keys are swept and new keys fit again.
-    clock.advance(16 * 60 * 1000);
-    expect(limiter.isBlocked('fresh-ip')).toBe(false);
+    expect(limiter.isBlocked('ip0')).toBe(true);
+  });
+
+  it('20 parallel wrong logins from one IP reach verification at most 5 times', async () => {
+    const { app } = setup();
+    const res = await Promise.all(
+      Array.from({ length: 20 }, () => login(app, 'wrong')),
+    );
+    const codes = res.map((r) => r.status);
+    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(5);
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(15);
+  });
+
+  it('20 parallel wrong logins for one username from distinct IPs reach verification at most 10 times', async () => {
+    let n = 0;
+    const { app } = setup({ ipOf: () => `8.8.8.${n++}` });
+    const res = await Promise.all(
+      Array.from({ length: 20 }, () => login(app, 'wrong')),
+    );
+    const codes = res.map((r) => r.status);
+    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(10);
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('releases the reserved slot after a successful login', async () => {
+    const { app } = setup();
+    for (let i = 0; i < 8; i++) expect((await login(app, PW)).status).toBe(200);
+  });
+
+  it('an unknown username answers like a wrong password even if the dummy hash fails', async () => {
+    let calls = 0;
+    const { app } = setup({
+      dummyHasher: async (pw) => {
+        if (calls++ === 0) throw new Error('boom');
+        return hashPassword(pw);
+      },
+    });
+    const first = await login(app, 'x', 'nobody');
+    const second = await login(app, 'x', 'nobody2');
+    const known = await login(app, 'x');
+    expect([first.status, second.status, known.status]).toEqual([
+      401, 401, 401,
+    ]);
+    expect(calls).toBe(2);
+  });
+
+  it('answers 429 when the hash wait queue is full', async () => {
+    let n = 0;
+    const { app } = setup({ ipOf: () => `7.7.${n >> 8}.${n++ & 255}` });
+    const codes = (
+      await Promise.all(
+        Array.from({ length: 120 }, (_, i) => login(app, 'wrong', `user${i}`)),
+      )
+    ).map((r) => r.status);
+    expect(codes).toContain(429);
+    expect(codes).toContain(401);
+    expect(codes.every((c) => c === 401 || c === 429)).toBe(true);
   });
 
   it('keys IPv6 by /64 and IPv4-mapped IPv6 as IPv4', () => {
