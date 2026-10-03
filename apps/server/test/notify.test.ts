@@ -240,7 +240,11 @@ describe('two accounts', () => {
     expect(mp.subject).toBe('🔴 gronkh spielt jetzt Elden Ring');
     expect(hp.recipients).toEqual(['tom@y.test']);
     expect(hp.subject).toBe('🔴 gronkh is now playing Elden Ring');
-    expect(events.filter((e) => e.type === 'notification')).toHaveLength(1);
+    const notes = events.filter((e) => e.type === 'notification');
+    expect(notes.map((e) => e.payload)).toEqual([
+      expect.objectContaining({ ownerId: OWNER_ID, broadcasterId: B }),
+      expect.objectContaining({ ownerId: tom, broadcasterId: B }),
+    ]);
     expect(wakes).toBe(1);
     await online('s1');
     expect(outbox()).toHaveLength(2);

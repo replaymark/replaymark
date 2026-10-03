@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   createContext,
   type ReactNode,
@@ -7,6 +8,7 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { setupQuery } from '../lib/auth.ts';
 import {
   detectLang,
   errorMessage,
@@ -26,16 +28,22 @@ interface I18nCtx {
 
 const Ctx = createContext<I18nCtx | null>(null);
 
-function initialLang(): Lang {
-  let stored: string | null = null;
+function storedLang(): string | null {
   try {
-    stored = localStorage.getItem(LANG_KEY);
-  } catch {}
-  return detectLang(stored, navigator.language);
+    return localStorage.getItem(LANG_KEY);
+  } catch {
+    return null;
+  }
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(initialLang);
+  const [chosen, setChosen] = useState<string | null>(storedLang);
+  const setup = useQuery(setupQuery);
+  const lang = detectLang(
+    chosen,
+    navigator.language,
+    setup.data?.defaultLanguage,
+  );
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -45,7 +53,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(LANG_KEY, l);
     } catch {}
-    setLangState(l);
+    setChosen(l);
   }, []);
 
   const value = useMemo(() => ({ lang, setLang }), [lang, setLang]);

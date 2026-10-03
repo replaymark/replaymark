@@ -90,6 +90,15 @@ describe('user management', () => {
     expect(
       t.handle.db.select().from(users).where(eq(users.id, id)).get()
         ?.mailLanguage,
+    ).toBe('en');
+  });
+
+  it('creates the user with the configured default language', async () => {
+    h = createAdminHarness({ defaultLanguage: 'de' });
+    const body = (await (await create(h)).json()) as UserBody;
+    expect(
+      h.handle.db.select().from(users).where(eq(users.id, body.user.id)).get()
+        ?.mailLanguage,
     ).toBe('de');
   });
 

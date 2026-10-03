@@ -29,6 +29,7 @@ export const envSchema = z.object({
 
   DATA_DIR: z.string().min(1).default('/data'),
   TZ: optionalString,
+  DEFAULT_LANGUAGE: z.enum(['en', 'de']).default('en'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
   PUBLIC_PORT: z.coerce.number().int().min(0).max(65535).default(8080),

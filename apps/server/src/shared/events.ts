@@ -30,6 +30,8 @@ export interface SubscriptionsEvent {
 }
 
 export interface NotificationEvent {
+  /** The account the mail was queued for; only that account (and admins) receive the event. */
+  ownerId: number;
   streamId: string;
   categoryId: string;
   broadcasterId: string;
@@ -42,8 +44,10 @@ export interface TimelineEvent {
   streamId: string;
 }
 
-/** A game group was created, changed or deleted. */
-export type GroupsEvent = Record<string, never>;
+/** A game group of one account was created, changed or deleted. */
+export interface GroupsEvent {
+  ownerId: number;
+}
 
 export interface EventMap {
   'live-state': LiveStateEvent;

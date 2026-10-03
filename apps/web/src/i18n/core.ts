@@ -76,9 +76,13 @@ export function errorMessage(
 export function detectLang(
   stored: string | null,
   navigatorLang: string | undefined,
+  defaultLang?: Lang,
 ): Lang {
   if (stored === 'en' || stored === 'de') return stored;
-  return navigatorLang?.toLowerCase().startsWith('de') ? 'de' : 'en';
+  const nav = navigatorLang?.toLowerCase();
+  if (nav?.startsWith('de')) return 'de';
+  if (nav?.startsWith('en')) return 'en';
+  return defaultLang ?? 'en';
 }
 
 /** Sorted dotted key paths of a dictionary (for parity tests). */

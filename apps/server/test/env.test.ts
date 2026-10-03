@@ -18,10 +18,20 @@ describe('loadEnv', () => {
     const env = loadEnv(base);
     expect(env.DATA_DIR).toBe('/data');
     expect(env.LOG_LEVEL).toBe('info');
+    expect(env.DEFAULT_LANGUAGE).toBe('en');
     expect(env.ADMIN_COOKIE_SECURE).toBe(true);
     expect(env.SMTP_PORT).toBe(587);
     expect(env.ADMIN_PASSWORD_HASH).toBeUndefined();
     expect(env.PUBLIC_BASE_URL).toBeUndefined();
+  });
+
+  test('accepts de and rejects other DEFAULT_LANGUAGE values', () => {
+    expect(loadEnv({ ...base, DEFAULT_LANGUAGE: 'de' }).DEFAULT_LANGUAGE).toBe(
+      'de',
+    );
+    expect(() => loadEnv({ ...base, DEFAULT_LANGUAGE: 'fr' })).toThrow(
+      /DEFAULT_LANGUAGE/,
+    );
   });
 
   test('parses ADMIN_COOKIE_SECURE=false', () => {
@@ -53,9 +63,9 @@ describe('loadEnv', () => {
   });
 });
 
-describe('ADMIN_PASSWORD_HASH format', () => {
-  const hash = hashPassword('pw');
+const hash = await hashPassword('pw');
 
+describe('ADMIN_PASSWORD_HASH format', () => {
   test('accepts a hash from hashPassword', () => {
     expect(
       loadEnv({ ...base, ADMIN_PASSWORD_HASH: hash }).ADMIN_PASSWORD_HASH,

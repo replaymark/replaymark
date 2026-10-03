@@ -54,9 +54,9 @@ const STRINGS = {
     time: 'Zeit',
     watch: 'Jetzt ansehen',
     admin: 'Im Admin-UI öffnen',
-    testSubject: 'Replaymark Test-E-Mail',
+    testSubject: 'Replaymark Test-Mail',
     testBody:
-      'Dies ist eine Test-E-Mail von Replaymark. Der Versand funktioniert.',
+      'Dies ist eine Test-Mail von Replaymark. Der Versand funktioniert.',
   },
   en: {
     subject: (n: string, g: string) => `🔴 ${n} is now playing ${g}`,

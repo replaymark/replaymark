@@ -63,8 +63,8 @@ afterEach(() => {
 
 const PW = 'secret pw';
 let HASH: string;
-beforeAll(() => {
-  HASH = hashPassword(PW);
+beforeAll(async () => {
+  HASH = await hashPassword(PW);
 });
 
 function setup(...args: Parameters<typeof createAdminHarness>) {
@@ -1222,6 +1222,26 @@ describe('game groups', () => {
       json: { name: 'Nope' },
     });
     expect(events.filter((e) => e.type === 'groups')).toHaveLength(3);
+  });
+
+  it('sets Cache-Control: no-store on /api responses, errors and 404s included', async () => {
+    const t = setup();
+    for (const path of ['/api/overview', '/api/nope', '/api/auth/me']) {
+      const res = await t.req(path);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+    }
+    const anon = await t.app.request('http://admin.local:8081/api/overview');
+    expect(anon.status).toBe(401);
+    expect(anon.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('rejects admin request bodies over 64 KiB with 413', async () => {
+    const t = setup();
+    const res = await t.req('/api/game-groups', {
+      method: 'POST',
+      json: { name: 'x'.repeat(70 * 1024), categoryIds: [] },
+    });
+    expect(res.status).toBe(413);
   });
 
   it('rejects invalid input and unknown categories with 400', async () => {

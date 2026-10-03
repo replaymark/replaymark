@@ -108,3 +108,60 @@ jobs:
             VERSION=${{ steps.plan.outputs.build_version }}
           cache-from: type=gha,scope=${{ env.CHANNEL }}
           cache-to: type=gha,scope=${{ env.CHANNEL }},mode=max
+
+  back-merge:
+    name: Back-merge into develop
+    runs-on: ubuntu-latest
+    needs: release
+    # Only after a stable release on main. The tag vX.Y.Z lives on main; until
+    # main is merged back, develop cannot reach it and semantic-release keeps
+    # counting old prereleases (e.g. 1.1.0-develop.3 after 1.1.0).
+    if: github.ref == 'refs/heads/main' && needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      APP_ID: ${{ secrets.RELEASE_APP_ID }}
+    steps:
+      # PRs created with GITHUB_TOKEN do not trigger workflows, so the required
+      # checks of the develop ruleset would never report and the PR could not be
+      # merged. A GitHub App token (optional secrets RELEASE_APP_ID and
+      # RELEASE_APP_PRIVATE_KEY, see CONTRIBUTING.md) does trigger them. Without
+      # the app we fall back to GITHUB_TOKEN and a maintainer must re-run the
+      # checks (or close and reopen the PR) and merge it.
+      - id: app
+        if: env.APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Open back-merge pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VIA_APP: ${{ steps.app.outputs.token != '' }}
+        run: |
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main; nothing to back-merge."
+            exit 0
+          fi
+          existing="$(gh pr list --base develop --head main --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            echo "Pull request #$existing (main -> develop) is already open."
+            exit 0
+          fi
+          url="$(gh pr create --base develop --head main \
+            --title "chore(release): back-merge v${VERSION} into develop" \
+            --body "Merges main back into develop so the release tag v${VERSION} is reachable from develop. Without this, semantic-release on develop keeps counting old prereleases. Merge with a merge commit (not squash or rebase); opened automatically by the release workflow.")"
+          echo "Opened $url"
+          if ! gh pr merge "$url" --auto --merge; then
+            echo "::warning::Could not enable auto-merge for $url; merge it manually with a merge commit."
+          fi
+          if [ "$VIA_APP" != "true" ]; then
+            echo "::warning::Created with GITHUB_TOKEN: required checks will not run automatically. Re-run them or close and reopen the PR, then merge. Configure RELEASE_APP_ID/RELEASE_APP_PRIVATE_KEY to automate this."
+          fi
