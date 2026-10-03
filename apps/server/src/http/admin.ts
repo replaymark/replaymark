@@ -13,6 +13,7 @@ import {
   sql,
 } from 'drizzle-orm';
 import { type Context, Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { ValidationTargets } from 'hono/types';
 import { validator } from 'hono/validator';
 import type { z } from 'zod';
@@ -513,6 +514,8 @@ function isUniqueViolation(e: unknown): boolean {
   return typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT');
 }
 
+const ADMIN_BODY_LIMIT_BYTES = 64 * 1024;
+
 /** Typed `/api` routes; `AppType` for the web `hc` client. */
 export function createAdminRoutes(deps: AdminAppDeps) {
   const { db, clock, helix, reconciler } = deps;
@@ -647,7 +650,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
       );
   }
 
-  const events = deps.events ? sseHandler(deps.events) : undefined;
+  const events = deps.events ? sseHandler({ ...deps.events, db }) : undefined;
 
   const api = new Hono()
     .use(requireSession({ db, clock, cookieSecure: deps.cookieSecure }))
@@ -944,7 +947,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
         return row.id;
       });
       reconciler.requestDebounced('game groups changed');
-      deps.events?.bus.publish('groups', {});
+      deps.events?.bus.publish('groups', { ownerId: me });
       const [dto] = listGameGroups(db, me, id);
       return c.json(dto as GameGroup, 201);
     })
@@ -983,7 +986,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
         }
       });
       reconciler.requestDebounced('game groups changed');
-      deps.events?.bus.publish('groups', {});
+      deps.events?.bus.publish('groups', { ownerId: me });
       const [dto] = listGameGroups(db, me, id);
       return c.json(dto as GameGroup);
     })
@@ -998,7 +1001,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
         );
       db.delete(gameGroups).where(eq(gameGroups.id, id)).run();
       reconciler.requestDebounced('game groups changed');
-      deps.events?.bus.publish('groups', {});
+      deps.events?.bus.publish('groups', { ownerId: c.get('user').id });
       return c.json({ ok: true as const });
     })
     .get('/categories/search', zv('query', categorySearchQuery), async (c) => {
@@ -1358,6 +1361,14 @@ export function createAdminRoutes(deps: AdminAppDeps) {
     rateLimiter: deps.rateLimiter ?? createLoginRateLimiter(clock),
   };
   return new Hono()
+    .use(
+      '/api/*',
+      bodyLimit({
+        maxSize: ADMIN_BODY_LIMIT_BYTES,
+        onError: (c) =>
+          c.json(apiError('validation_failed', 'Request body too large'), 413),
+      }),
+    )
     .use('/api/*', originCheck())
     .route('/api/auth', createAuthRoutes(authDeps))
     .route('/api/account', createAccountRoutes(authDeps))
@@ -1412,6 +1423,9 @@ export function createAdminApp(deps: AdminAppDeps) {
     c.res.headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
     c.res.headers.set('X-Content-Type-Options', 'nosniff');
     c.res.headers.set('Referrer-Policy', 'same-origin');
+    // API answers carry session data; the event stream sets its own no-cache.
+    if (c.req.path.startsWith('/api/') && !c.res.headers.has('Cache-Control'))
+      c.res.headers.set('Cache-Control', 'no-store');
   });
 
   app.onError((err, c) => {

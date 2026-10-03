@@ -51,7 +51,13 @@ declare module 'hono' {
 
 // ---------- password hashing ----------
 
-const SCRYPT_N = 2 ** 15;
+/** Cost of new hashes (128 MiB per hash). The env override exists for the test suite only. */
+const SCRYPT_N = (() => {
+  const test = Number(process.env.REPLAYMARK_TEST_SCRYPT_N);
+  return Number.isInteger(test) && test >= 2 && (test & (test - 1)) === 0
+    ? test
+    : 2 ** 17;
+})();
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SALT_BYTES = 32;
@@ -61,15 +67,22 @@ function maxmemFor(n: number, r: number, p: number): number {
   return 128 * n * r * p + 128 * r * (p + 2) + 1024 * 1024;
 }
 
-export function hashPassword(pw: string): string {
+export function hashPassword(pw: string, n: number = SCRYPT_N): string {
   const salt = randomBytes(SALT_BYTES);
   const hash = scryptSync(pw, salt, KEY_BYTES, {
-    N: SCRYPT_N,
+    N: n,
     r: SCRYPT_R,
     p: SCRYPT_P,
-    maxmem: maxmemFor(SCRYPT_N, SCRYPT_R, SCRYPT_P),
+    maxmem: maxmemFor(n, SCRYPT_R, SCRYPT_P),
   });
-  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
+  return `scrypt$${n}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+/** True when `stored` is a valid-looking scrypt hash with lower cost than new hashes get. */
+export function needsRehash(stored: string): boolean {
+  const [scheme, n, r, p] = stored.split('$');
+  if (scheme !== 'scrypt') return false;
+  return Number(n) < SCRYPT_N || Number(r) < SCRYPT_R || Number(p) < SCRYPT_P;
 }
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -115,6 +128,8 @@ export function verifyPassword(pw: string, stored: string): boolean {
 
 export const SESSION_COOKIE = 'replaymark_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Absolute cap: a session ends this long after login, however active. */
+export const SESSION_MAX_MS = 90 * 24 * 60 * 60 * 1000;
 const SLIDE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export function hashSessionToken(token: string): string {
@@ -162,6 +177,7 @@ export function checkSession(
   const row = db
     .select({
       expiresAt: sessions.expiresAt,
+      createdAt: sessions.createdAt,
       lastSeenAt: sessions.lastSeenAt,
       id: users.id,
       username: users.username,
@@ -175,7 +191,8 @@ export function checkSession(
     .get();
   if (!row?.passwordHash) return { state: 'invalid' };
   const now = clock.now();
-  if (row.expiresAt <= now) {
+  const hardEnd = row.createdAt + SESSION_MAX_MS;
+  if (row.expiresAt <= now || hardEnd <= now) {
     db.delete(sessions).where(eq(sessions.id, id)).run();
     return { state: 'invalid' };
   }
@@ -187,7 +204,10 @@ export function checkSession(
   };
   if (now - row.lastSeenAt > SLIDE_AFTER_MS) {
     db.update(sessions)
-      .set({ expiresAt: now + SESSION_TTL_MS, lastSeenAt: now })
+      .set({
+        expiresAt: Math.min(now + SESSION_TTL_MS, hardEnd),
+        lastSeenAt: now,
+      })
       .where(eq(sessions.id, id))
       .run();
     return { state: 'extended', user };
@@ -231,32 +251,58 @@ export function deleteSession(db: Db, cookieValue: string | undefined): void {
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 export const LOGIN_MAX_FAILURES = 5;
 
+export const LOGIN_MAX_FAILURES_PER_USERNAME = 10;
+/** Upper bound of tracked keys per map; the oldest are dropped first. */
+export const LIMITER_MAX_KEYS = 10_000;
+
 export interface LoginRateLimiter {
-  isBlocked(ip: string): boolean;
-  recordFailure(ip: string): void;
+  isBlocked(ip: string, username?: string): boolean;
+  recordFailure(ip: string, username?: string): void;
 }
 
-/** In-memory: at most 5 failures per IP inside a sliding 15 min window. */
+const limiterKey = (username: string) => username.trim().toLowerCase();
+
+/** In-memory: failures inside a sliding 15 min window, per IP (5) and per username (10). */
 export function createLoginRateLimiter(clock: Clock): LoginRateLimiter {
-  const failures = new Map<string, number[]>();
-  const prune = (now: number) => {
-    for (const [ip, times] of failures) {
-      const recent = times.filter((t) => now - t < LOGIN_WINDOW_MS);
-      if (recent.length === 0) failures.delete(ip);
-      else failures.set(ip, recent);
+  const byIp = new Map<string, number[]>();
+  const byName = new Map<string, number[]>();
+  const recent = (map: Map<string, number[]>, key: string, now: number) => {
+    const times = map.get(key);
+    if (!times) return [];
+    const kept = times.filter((t) => now - t < LOGIN_WINDOW_MS);
+    if (kept.length === 0) map.delete(key);
+    else if (kept.length !== times.length) map.set(key, kept);
+    return kept;
+  };
+  const prune = (map: Map<string, number[]>, now: number) => {
+    for (const key of [...map.keys()]) recent(map, key, now);
+    // Still full of live entries: drop the oldest keys.
+    for (const key of map.keys()) {
+      if (map.size <= LIMITER_MAX_KEYS) break;
+      map.delete(key);
     }
   };
+  const record = (map: Map<string, number[]>, key: string, now: number) => {
+    const list = recent(map, key, now);
+    list.push(now);
+    map.delete(key); // re-insert: keeps insertion order roughly by last failure
+    map.set(key, list);
+    if (map.size > LIMITER_MAX_KEYS) prune(map, now);
+  };
   return {
-    isBlocked(ip) {
-      prune(clock.now());
-      return (failures.get(ip)?.length ?? 0) >= LOGIN_MAX_FAILURES;
-    },
-    recordFailure(ip) {
+    isBlocked(ip, username) {
       const now = clock.now();
-      prune(now);
-      const list = failures.get(ip) ?? [];
-      list.push(now);
-      failures.set(ip, list);
+      if (recent(byIp, ip, now).length >= LOGIN_MAX_FAILURES) return true;
+      return (
+        username !== undefined &&
+        recent(byName, limiterKey(username), now).length >=
+          LOGIN_MAX_FAILURES_PER_USERNAME
+      );
+    },
+    recordFailure(ip, username) {
+      const now = clock.now();
+      record(byIp, ip, now);
+      if (username !== undefined) record(byName, limiterKey(username), now);
     },
   };
 }
@@ -417,9 +463,8 @@ export function applyHashTakeover(
 // ---------- routes ----------
 
 // Verified against when the username is unknown, so both failures take equally long.
-let dummyHash: string | undefined;
+const dummyHash = hashPassword(randomBytes(8).toString('hex'));
 function verifyAgainstDummy(pw: string): void {
-  dummyHash ??= hashPassword(randomBytes(8).toString('hex'));
   verifyPassword(pw, dummyHash);
 }
 
@@ -542,6 +587,7 @@ export function createAuthRoutes(deps: AuthDeps) {
         return c.json(apiError('validation_failed', 'Invalid body'), 400);
       }
       const { username, password } = parsed.data;
+      if (limiter.isBlocked(ip, username)) return tooMany(c);
       const account = db
         .select({ id: users.id, hash: users.passwordHash })
         .from(users)
@@ -551,11 +597,17 @@ export function createAuthRoutes(deps: AuthDeps) {
         verifyAgainstDummy(password);
       }
       if (!account?.hash || !verifyPassword(password, account.hash)) {
-        limiter.recordFailure(ip);
+        limiter.recordFailure(ip, username);
         return c.json(
           apiError('invalid_password', 'Wrong username or password'),
           401,
         );
+      }
+      if (needsRehash(account.hash)) {
+        db.update(users)
+          .set({ passwordHash: hashPassword(password) })
+          .where(eq(users.id, account.id))
+          .run();
       }
       setSessionCookie(
         c,

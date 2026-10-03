@@ -129,3 +129,21 @@ describe('setup code logging', () => {
     expect(lines[0]).toContain('Setup code: ABCDE-FGHJK');
   });
 });
+
+describe('redact hardening', () => {
+  test('redacts code and setupCode keys', () => {
+    expect(
+      redact({ code: 'ABCDE-FGHJK', setupCode: 'X', codec: 'h264' }),
+    ).toEqual({
+      code: '[redacted]',
+      setupCode: '[redacted]',
+      codec: 'h264',
+    });
+  });
+
+  test('redacts secrets of 4 characters inside text', () => {
+    expect(redact({ note: 'pw is abcd here' }, ['abcd'])).toEqual({
+      note: 'pw is [redacted] here',
+    });
+  });
+});

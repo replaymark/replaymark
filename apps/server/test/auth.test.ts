@@ -7,11 +7,14 @@ import {
   applyHashTakeover,
   createAccountRoutes,
   createAuthRoutes,
+  createLoginRateLimiter,
   createSession,
   generateSetupCode,
   generateTemporaryPassword,
   hashPassword,
   hashSessionToken,
+  LIMITER_MAX_KEYS,
+  needsRehash,
   originCheck,
   requireAdmin,
   requireSession,
@@ -38,6 +41,7 @@ function setup(
     secure?: boolean;
     withPassword?: boolean;
     defaultLanguage?: 'en' | 'de';
+    ipOf?: () => string;
   } = {},
 ) {
   handle = createTestDb();
@@ -53,7 +57,7 @@ function setup(
     db,
     clock,
     cookieSecure: opts.secure ?? true,
-    ipOf: () => '1.2.3.4',
+    ipOf: opts.ipOf ?? (() => '1.2.3.4'),
     setupCode: () => SETUP_CODE,
     ...(opts.defaultLanguage ? { defaultLanguage: opts.defaultLanguage } : {}),
   };
@@ -96,7 +100,7 @@ function cookieOf(res: Response): string {
 
 describe('password hashing', () => {
   it('roundtrips', () => {
-    expect(HASH).toMatch(/^scrypt\$32768\$8\$1\$/);
+    expect(HASH).toMatch(/^scrypt\$1024\$8\$1\$/);
     expect(verifyPassword(PW, HASH)).toBe(true);
   });
   it('rejects wrong password', () => {
@@ -686,5 +690,87 @@ describe('hash takeover', () => {
     expect(applyHashTakeover(db, undefined, logger)).toBe(false);
     expect(applyHashTakeover(db, 'garbage', logger)).toBe(false);
     expect(db.select().from(users).get()?.passwordHash).toBeNull();
+  });
+});
+
+describe('hardening', () => {
+  it('ends a session 90 days after login however active it was', async () => {
+    const { app, clock, db } = setup();
+    const token = cookieOf(await login(app, PW));
+    for (let day = 0; day < 89; day++) {
+      clock.advance(DAY);
+      expect(validateSession(db, clock, token)).toBe(true);
+    }
+    const row = db.select().from(sessions).get();
+    expect(row?.expiresAt).toBeLessThanOrEqual(
+      (row?.createdAt ?? 0) + 90 * DAY,
+    );
+    clock.advance(2 * DAY);
+    expect(validateSession(db, clock, token)).toBe(false);
+  });
+
+  it('blocks a username after 10 failures from different IPs', () => {
+    const clock = createFakeClock();
+    const limiter = createLoginRateLimiter(clock);
+    for (let i = 0; i < 10; i++) limiter.recordFailure(`10.0.0.${i}`, 'Admin');
+    expect(limiter.isBlocked('10.0.0.99', 'admin')).toBe(true);
+    expect(limiter.isBlocked('10.0.0.99', 'other')).toBe(false);
+    clock.advance(15 * 60 * 1000);
+    expect(limiter.isBlocked('10.0.0.99', 'admin')).toBe(false);
+  });
+
+  it('answers 429 on login once the username failed 10 times from 10 IPs', async () => {
+    let n = 0;
+    const { app } = setup({ ipOf: () => `9.9.9.${n}` });
+    for (n = 0; n < 10; n++)
+      expect((await login(app, 'wrong')).status).toBe(401);
+    n = 99;
+    const res = await login(app, PW);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'rate_limited' },
+    });
+  });
+
+  it('bounds limiter memory', () => {
+    const limiter = createLoginRateLimiter(createFakeClock());
+    for (let i = 0; i < LIMITER_MAX_KEYS + 50; i++)
+      limiter.recordFailure(`ip${i}`, `user${i}`);
+    expect(limiter.isBlocked('ip0')).toBe(false);
+    expect(limiter.isBlocked(`ip${LIMITER_MAX_KEYS + 49}`)).toBe(false);
+  });
+
+  it('rejects passwords over 200 characters with 400', async () => {
+    const { app } = setup();
+    const res = await login(app, 'x'.repeat(201));
+    expect(res.status).toBe(400);
+    const setupRes = await post(app, '/api/auth/setup', {
+      code: SETUP_CODE,
+      username: 'abc',
+      email: 'a@b.org',
+      password: 'x'.repeat(201),
+    });
+    expect([400, 409]).toContain(setupRes.status);
+  });
+
+  it('rehashes a lower-cost hash on successful login and still verifies old hashes', async () => {
+    const { app, db } = setup();
+    const old = hashPassword(PW, 2 ** 9);
+    expect(needsRehash(old)).toBe(true);
+    db.update(users).set({ passwordHash: old }).where(eq(users.id, 1)).run();
+    expect((await login(app, PW)).status).toBe(200);
+    const stored = db.select().from(users).get()?.passwordHash ?? '';
+    expect(stored).not.toBe(old);
+    expect(needsRehash(stored)).toBe(false);
+    expect(verifyPassword(PW, stored)).toBe(true);
+    expect(verifyPassword(PW, old)).toBe(true);
+  });
+
+  it('does not rehash after a failed login', async () => {
+    const { app, db } = setup();
+    const old = hashPassword(PW, 2 ** 9);
+    db.update(users).set({ passwordHash: old }).where(eq(users.id, 1)).run();
+    expect((await login(app, 'wrong')).status).toBe(401);
+    expect(db.select().from(users).get()?.passwordHash).toBe(old);
   });
 });

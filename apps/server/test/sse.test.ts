@@ -3,7 +3,12 @@ import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { createBus } from '../src/events/bus.ts';
 import type { AppType } from '../src/http/admin.ts';
 import { createSseRegistry } from '../src/http/sse.ts';
-import { type AdminHarness, createAdminHarness } from './helpers/admin.ts';
+import {
+  type AdminHarness,
+  createAdminHarness,
+  seedAccount,
+} from './helpers/admin.ts';
+import { seedStreamer } from './helpers/seed.ts';
 
 let h: AdminHarness | undefined;
 afterEach(() => {
@@ -70,6 +75,65 @@ describe('GET /api/events', () => {
     const res = await h.req('/api/events', { headers: { Cookie: 'x=y' } });
     expect(res.status).toBe(401);
     expect(registry.size()).toBe(0);
+  });
+});
+
+async function drain(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ms: number,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  let text = '';
+  const stop = Symbol('stop');
+  for (;;) {
+    const r = await Promise.race([
+      reader.read(),
+      new Promise<typeof stop>((res) => setTimeout(() => res(stop), ms)),
+    ]);
+    if (r === stop || r.done) return text;
+    text += decoder.decode(r.value, { stream: true });
+  }
+}
+
+describe('GET /api/events scoping', () => {
+  it("only delivers events about the account's broadcasters; sync and subscriptions only to admins", async () => {
+    const bus = createBus();
+    h = createAdminHarness({
+      events: { bus, registry: createSseRegistry(), pingMs: 60_000 },
+    });
+    seedStreamer(h.handle.db, { id: '100', ownerId: seedAccount(h, 'mia').id });
+    const tom = seedAccount(h, 'tom');
+    seedStreamer(h.handle.db, { id: '200', ownerId: tom.id });
+    const adminRes = await h.req('/api/events');
+    const tomRes = await tom.req('/api/events');
+    bus.publish('live-state', { broadcasterId: '100', live: true });
+    bus.publish('notification', {
+      streamId: 's',
+      categoryId: 'c',
+      broadcasterId: '100',
+    });
+    bus.publish('live-state', { broadcasterId: '200', live: true });
+    bus.publish('sync', { phase: 'start', reason: 'x' });
+    bus.publish('subscriptions', { active: 1 });
+    bus.publish('groups', { ownerId: tom.id });
+    bus.publish('groups', { ownerId: 999 });
+    const tomText = await drain(
+      (tomRes.body as ReadableStream<Uint8Array>).getReader(),
+      100,
+    );
+    expect(tomText).toContain('"broadcasterId":"200"');
+    expect(tomText).not.toContain('"broadcasterId":"100"');
+    expect(tomText).not.toContain('event: sync');
+    expect(tomText).not.toContain('event: subscriptions');
+    expect(tomText).toContain(`event: groups\ndata: {"ownerId":${tom.id}}`);
+    expect(tomText).not.toContain('"ownerId":999');
+    const adminText = await drain(
+      (adminRes.body as ReadableStream<Uint8Array>).getReader(),
+      100,
+    );
+    expect(adminText).toContain('event: sync');
+    expect(adminText).toContain('event: subscriptions');
+    expect(adminText).not.toContain('"broadcasterId":"100"');
   });
 });
 

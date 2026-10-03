@@ -13,10 +13,10 @@ const COLORS: Record<LogLevel, string> = {
   error: '\x1b[31m',
 };
 const SENSITIVE_KEY =
-  /token|secret|password|hash|session|authorization|cookie/i;
+  /token|secret|password|hash|session|authorization|cookie|^code$|setupcode/i;
 export const REDACTED = '[redacted]';
 /** Shorter secrets are only redacted on exact match, to avoid mangling logs. */
-const MIN_SUBSTRING_SECRET_LENGTH = 8;
+const MIN_SUBSTRING_SECRET_LENGTH = 4;
 
 /** Deep-copies `value`, replacing sensitive keys and known secret strings with `[redacted]`. */
 export function redact(

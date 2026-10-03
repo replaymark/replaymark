@@ -68,7 +68,7 @@ export const newPasswordSchema = z.string().min(8).max(200);
 
 export const loginInput = z.object({
   username: z.string().min(1),
-  password: z.string().min(1),
+  password: z.string().min(1).max(200),
 });
 export const setupInput = z.object({
   code: z.string().min(1),
@@ -77,7 +77,7 @@ export const setupInput = z.object({
   password: newPasswordSchema,
 });
 export const changePasswordInput = z.object({
-  currentPassword: z.string().min(1),
+  currentPassword: z.string().min(1).max(200),
   newPassword: newPasswordSchema,
 });
 
