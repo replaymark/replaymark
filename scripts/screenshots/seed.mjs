@@ -21,9 +21,6 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
-const art = (id) =>
-  `https://static-cdn.jtvnw.net/ttv-boxart/${id}_IGDB-{width}x{height}.jpg`;
-
 const GAMES = {
   elden: { id: '512953', name: 'Elden Ring' },
   ds3: { id: '490292', name: 'Dark Souls III' },
@@ -116,7 +113,7 @@ export function seedDemo(file, now) {
 
   for (const g of Object.values(GAMES)) {
     db.insert(categories)
-      .values({ categoryId: g.id, name: g.name, boxArtUrl: art(g.id) })
+      .values({ categoryId: g.id, name: g.name, boxArtUrl: null })
       .onConflictDoNothing()
       .run();
   }
@@ -343,7 +340,7 @@ export function seedDemo(file, now) {
       login: s.login,
       displayName: s.name,
       gameName: gm.name,
-      boxArtUrl: art(gm.id),
+      boxArtUrl: null,
       title,
     };
     db.insert(mailOutbox)

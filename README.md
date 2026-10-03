@@ -13,7 +13,7 @@
   <a href="https://github.com/replaymark/replaymark/pkgs/container/replaymark"><img alt="Container image on GHCR" src="https://img.shields.io/badge/image-ghcr.io%2Freplaymark%2Freplaymark-informational"></a>
 </p>
 
-replaymark is a self-hosted Twitch notifier. It mails you when one of your favorite streamers goes live **and** plays a game you care about, either at stream start or when they switch to a matching category mid-stream. It listens to Twitch EventSub webhooks (`stream.online`, `stream.offline`, `channel.update`) and is managed through a small admin UI on your LAN. It also records which categories each stream covered and links straight into the VOD.
+replaymark is a self-hosted notifier for Twitch. It mails you when one of your favorite streamers goes live **and** plays a game you care about, either at stream start or when they switch to a matching category mid-stream. It listens to Twitch EventSub webhooks (`stream.online`, `stream.offline`, `channel.update`) and is managed through a small admin UI on your LAN. It also records which categories each stream covered and links straight into the VOD.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/images/overview-light.png">
@@ -83,12 +83,17 @@ Details, including building from source, are in [docs/installation.md](docs/inst
 | [Operations](docs/operations.md) | CLI, healthcheck, logs, backup, shutdown, local testing with the Twitch CLI |
 | [Upgrading](docs/upgrading.md) | Migrations, backup, switching to the GHCR image, `ADMIN_PASSWORD_HASH` takeover, YAML import |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and fixes |
+| [Data and privacy](docs/privacy.md) | What is stored, telemetry, third-party requests of the browser |
 | [Architecture](docs/architecture.md) | Design decisions and dependencies |
 | [Development](docs/development.md) | Setup, commands, project structure |
 
 ## Contributing and security
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Changes are listed in the [changelog](CHANGELOG.md).
+
+## Legal
+
+replaymark is not affiliated with or endorsed by Twitch Interactive, Inc. Twitch is a trademark of Twitch Interactive, Inc. Bundled fonts are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

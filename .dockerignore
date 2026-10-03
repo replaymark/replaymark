@@ -22,4 +22,5 @@ Dockerfile
 docs
 scripts
 *.md
+!THIRD_PARTY_NOTICES.md
 compose*.yaml

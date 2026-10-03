@@ -54,6 +54,10 @@ Notable choices of the implementation.
 - **Segment retention:** its own administrator setting `segmentRetentionDays` (default 365, `0` = forever), applied by the daily cleanup to whole ended streams, counted from the end of the stream.
 - **Container:** distroless Node 24 runtime (no shell, no package manager), numeric user `1000:0` with a group-writable `/data` so it also runs with an arbitrary UID in group 0 and under rootless Podman, unprivileged ports only, a `HEALTHCHECK` without curl, read-only root filesystem.
 
+## Legal
+
+replaymark is not affiliated with or endorsed by Twitch Interactive, Inc. Twitch is a trademark of Twitch Interactive, Inc.
+
 ## Dependencies
 
 | Package | Where | Reason |

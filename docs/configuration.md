@@ -66,6 +66,8 @@ These variables are read by Compose, not by the server.
 
 ## Settings in the UI
 
+The timeline keeps stream and category history for as long as `segmentRetentionDays` allows. Pick a retention that fits your own obligations (privacy law, the [Twitch Developer Services Agreement](https://legal.twitch.com/en/legal/developer-agreement/)); `0` keeps everything forever.
+
 Per-account and global options live in the admin UI under **Settings**, not in the environment: per account the mail recipients and the mail language (`de` or `en`, default `de`); for administrators only the sync interval (1 to 168 hours) and the timeline retention `segmentRetentionDays` (default 365, `0` keeps everything). The default games are maintained on the **Games** page. See [usage](usage.md#settings).
 
 ## Secrets

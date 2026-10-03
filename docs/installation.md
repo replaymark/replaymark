@@ -21,6 +21,8 @@ One process, three listeners:
 
 ## 1. Create the Twitch application
 
+Each operator registers their own Twitch application and is bound by the [Twitch Developer Services Agreement](https://legal.twitch.com/en/legal/developer-agreement/) for it.
+
 1. Register a new application at <https://dev.twitch.tv/console/apps>.
 2. Pick any name and category, and set the client type to **Confidential**.
 3. Set the OAuth redirect URL to `http://localhost`. replaymark only uses app access tokens (client credentials).
