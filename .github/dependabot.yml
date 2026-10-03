@@ -7,12 +7,18 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    commit-message:
+      prefix: "fix"
+      prefix-development: "chore"
+      include: "scope"
     groups:
       npm:
         patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     target-branch: develop
+    commit-message:
+      prefix: "ci"
     schedule:
       interval: weekly
     groups:
@@ -21,6 +27,8 @@ updates:
   - package-ecosystem: docker
     directory: /
     target-branch: develop
+    commit-message:
+      prefix: "build"
     schedule:
       interval: weekly
     ignore:

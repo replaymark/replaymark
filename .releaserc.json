@@ -1,0 +1,29 @@
+{
+  "branches": [
+    "main",
+    { "name": "develop", "prerelease": "develop", "channel": "develop" }
+  ],
+  "tagFormat": "v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/release-notes-generator",
+      { "preset": "conventionalcommits" }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false,
+        "failTitle": false,
+        "releasedLabels": false
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "publishCmd": "echo \"published=true\" >> \"${GITHUB_OUTPUT:-/dev/null}\" && echo \"version=${nextRelease.version}\" >> \"${GITHUB_OUTPUT:-/dev/null}\""
+      }
+    ]
+  ]
+}

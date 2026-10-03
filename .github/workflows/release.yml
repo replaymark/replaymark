@@ -1,8 +1,8 @@
 name: Images
 
-# develop -> ghcr.io/replaymark/replaymark:develop, :develop-<sha> (no release)
-# main    -> release: :<version>, :<major>.<minor>, :latest, git tag, GitHub release
-#            (skipped when tag v<version> already exists)
+# develop -> semantic-release prerelease X.Y.Z-develop.N (when commits warrant it)
+#            and always :develop, :develop-<sha>
+# main    -> semantic-release stable release X.Y.Z; image :X.Y.Z, :X.Y, :latest
 on:
   push:
     branches: [main, develop]
@@ -10,107 +10,68 @@ on:
 
 concurrency:
   group: images-${{ github.ref }}
-  # A release run must never be cancelled halfway (image pushed, tag missing).
+  # A release run must never be cancelled halfway (tag created, image missing).
   cancel-in-progress: ${{ github.ref == 'refs/heads/develop' }}
 
 permissions:
   contents: read
 
 jobs:
-  prepare:
-    name: Plan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      channel: ${{ steps.plan.outputs.channel }}
-      build: ${{ steps.plan.outputs.build }}
-      version: ${{ steps.plan.outputs.version }}
-      minor: ${{ steps.plan.outputs.minor }}
-      sha: ${{ steps.plan.outputs.sha }}
-      build_version: ${{ steps.plan.outputs.build_version }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: plan
-        run: |
-          version="$(jq -r .version package.json)"
-          sha="${GITHUB_SHA::7}"
-          {
-            echo "version=$version"
-            echo "minor=${version%.*}"
-            echo "sha=$sha"
-          } >> "$GITHUB_OUTPUT"
-          case "$GITHUB_REF" in
-            refs/heads/develop)
-              {
-                echo "channel=develop"
-                echo "build=true"
-                echo "build_version=${version}-develop+${sha}"
-              } >> "$GITHUB_OUTPUT"
-              ;;
-            refs/heads/main)
-              echo "channel=release" >> "$GITHUB_OUTPUT"
-              echo "build_version=$version" >> "$GITHUB_OUTPUT"
-              if [ -n "$(git ls-remote --tags origin "refs/tags/v${version}")" ]; then
-                echo "::notice::Tag v${version} already exists; skipping release."
-                echo "build=false" >> "$GITHUB_OUTPUT"
-              else
-                echo "build=true" >> "$GITHUB_OUTPUT"
-              fi
-              ;;
-            *)
-              echo "::notice::No image channel for $GITHUB_REF; nothing to do."
-              echo "channel=none" >> "$GITHUB_OUTPUT"
-              echo "build=false" >> "$GITHUB_OUTPUT"
-              echo "build_version=$version" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-
   gate:
     name: CI gate
-    needs: prepare
-    if: needs.prepare.outputs.build == 'true'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
-  changelog:
-    name: Changelog section
-    needs: prepare
-    if: needs.prepare.outputs.build == 'true' && needs.prepare.outputs.channel == 'release'
+  release:
+    name: Release
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      published: ${{ steps.release.outputs.published || 'false' }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-      - name: Extract changelog section
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          awk -v v="$VERSION" '
-            /^## \[/ { if (found) exit; if (index($0, "## [" v "]") == 1) { found = 1; next } }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          if ! grep -q '[^[:space:]]' release-notes.md; then
-            echo "::error::No CHANGELOG.md section for version $VERSION"
-            exit 1
-          fi
-      - uses: actions/upload-artifact@v7
         with:
-          name: release-notes
-          path: release-notes.md
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: release
+        run: pnpm exec semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   image:
     name: Publish image
     runs-on: ubuntu-latest
-    needs: [prepare, gate, changelog]
-    # changelog is skipped on develop, which is fine; a failed or cancelled need is not.
-    if: ${{ !cancelled() && needs.gate.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.changelog.result) }}
+    needs: release
+    # main: only when a release was published; develop: always.
+    if: github.ref == 'refs/heads/develop' || needs.release.outputs.published == 'true'
     permissions:
       contents: read
       packages: write
+    env:
+      CHANNEL: ${{ github.ref == 'refs/heads/main' && 'release' || 'develop' }}
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+      - id: plan
+        run: |
+          sha="${GITHUB_SHA::7}"
+          {
+            echo "sha=$sha"
+            echo "minor=${VERSION%.*}"
+            echo "build_version=${VERSION:-$sha}"
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -125,16 +86,16 @@ jobs:
         with:
           images: ghcr.io/replaymark/replaymark
           tags: |
-            type=raw,value=develop,enable=${{ needs.prepare.outputs.channel == 'develop' }}
-            type=raw,value=develop-${{ needs.prepare.outputs.sha }},enable=${{ needs.prepare.outputs.channel == 'develop' }}
-            type=raw,value=${{ needs.prepare.outputs.version }},enable=${{ needs.prepare.outputs.channel == 'release' }}
-            type=raw,value=${{ needs.prepare.outputs.minor }},enable=${{ needs.prepare.outputs.channel == 'release' }}
-            type=raw,value=latest,enable=${{ needs.prepare.outputs.channel == 'release' }}
+            type=raw,value=develop,enable=${{ env.CHANNEL == 'develop' }}
+            type=raw,value=develop-${{ steps.plan.outputs.sha }},enable=${{ env.CHANNEL == 'develop' }}
+            type=raw,value=${{ env.VERSION }},enable=${{ env.VERSION != '' }}
+            type=raw,value=${{ steps.plan.outputs.minor }},enable=${{ env.CHANNEL == 'release' }}
+            type=raw,value=latest,enable=${{ env.CHANNEL == 'release' }}
           flavor: |
             latest=false
           labels: |
             org.opencontainers.image.licenses=AGPL-3.0-only
-            org.opencontainers.image.version=${{ needs.prepare.outputs.build_version }}
+            org.opencontainers.image.version=${{ steps.plan.outputs.build_version }}
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -144,31 +105,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
-            VERSION=${{ needs.prepare.outputs.build_version }}
-          cache-from: type=gha,scope=${{ needs.prepare.outputs.channel }}
-          cache-to: type=gha,scope=${{ needs.prepare.outputs.channel }},mode=max
-
-  release:
-    name: Tag and GitHub release
-    runs-on: ubuntu-latest
-    needs: [prepare, image]
-    if: needs.prepare.outputs.channel == 'release'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: release-notes
-      - name: Tag and create release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          tag="v${VERSION}"
-          git tag "$tag" "$GITHUB_SHA"
-          git push origin "refs/tags/$tag"
-          flags=()
-          case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
-          gh release create "$tag" --verify-tag --title "$tag" \
-            --notes-file release-notes.md "${flags[@]}"
+            VERSION=${{ steps.plan.outputs.build_version }}
+          cache-from: type=gha,scope=${{ env.CHANNEL }}
+          cache-to: type=gha,scope=${{ env.CHANNEL }},mode=max

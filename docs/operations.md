@@ -32,6 +32,7 @@ The image is `ghcr.io/replaymark/replaymark`. Select a tag with `REPLAYMARK_VERS
 | `X.Y` | Newest patch release of a minor version, for example `1.1` |
 | `develop` | Latest build of the `develop` branch |
 | `develop-<sha>` | A single `develop` build (short commit SHA), for pinning |
+| `X.Y.Z-develop.N` | Prerelease from `develop`, for example `1.1.0-develop.1` (only built when the commits since the last release warrant a version) |
 
 All tags are multi-arch (`linux/amd64`, `linux/arm64`).
 
