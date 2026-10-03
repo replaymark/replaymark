@@ -63,9 +63,9 @@ describe('loadEnv', () => {
   });
 });
 
-describe('ADMIN_PASSWORD_HASH format', () => {
-  const hash = hashPassword('pw');
+const hash = await hashPassword('pw');
 
+describe('ADMIN_PASSWORD_HASH format', () => {
   test('accepts a hash from hashPassword', () => {
     expect(
       loadEnv({ ...base, ADMIN_PASSWORD_HASH: hash }).ADMIN_PASSWORD_HASH,

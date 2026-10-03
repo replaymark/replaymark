@@ -281,10 +281,11 @@ export function createInternalApp(deps: InternalAppDeps) {
         .get();
       if (!target) return c.json(apiError('not_found', 'Unknown user'), 404);
       const temporaryPassword = generateTemporaryPassword();
+      const passwordHash = await hashPassword(temporaryPassword);
       db.transaction((tx) => {
         tx.update(users)
           .set({
-            passwordHash: hashPassword(temporaryPassword),
+            passwordHash,
             mustChangePassword: true,
           })
           .where(eq(users.id, target.id))

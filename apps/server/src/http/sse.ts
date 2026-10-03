@@ -1,10 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import type { Clock } from '../clock.ts';
 import type { Db } from '../db/client.ts';
-import { follows, streams, users } from '../db/schema.ts';
+import { follows, sessions, streams, users } from '../db/schema.ts';
 import type { Bus } from '../events/bus.ts';
 import type { BusEvent } from '../shared/events.ts';
+import { SESSION_MAX_MS } from './auth.ts';
 
 export const SSE_PING_MS = 20_000;
 
@@ -40,11 +42,18 @@ export interface SseDeps {
 }
 
 /**
- * Whether the account may see `event`. Live, timeline and notification events need
- * the broadcaster in the account's list, group events the account as owner, sync and
+ * Whether the account may see `event`. Live and timeline events need the broadcaster
+ * in the account's list, notification and group events the account as owner
+ * (administrators see every notification, as on the history page), sync and
  * subscription events an administrator. Anything else is dropped.
  */
 export function mayReceive(db: Db, userId: number, event: BusEvent): boolean {
+  const isAdmin = () =>
+    db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get()?.role === 'admin';
   const follows_ = (broadcasterId: string | undefined) =>
     broadcasterId !== undefined &&
     !!db
@@ -59,8 +68,9 @@ export function mayReceive(db: Db, userId: number, event: BusEvent): boolean {
       .get();
   switch (event.type) {
     case 'live-state':
-    case 'notification':
       return follows_(event.payload.broadcasterId);
+    case 'notification':
+      return event.payload.ownerId === userId || isAdmin();
     case 'timeline':
       return follows_(
         db
@@ -73,40 +83,73 @@ export function mayReceive(db: Db, userId: number, event: BusEvent): boolean {
       return event.payload.ownerId === userId;
     case 'sync':
     case 'subscriptions':
-      return (
-        db
-          .select({ role: users.role })
-          .from(users)
-          .where(eq(users.id, userId))
-          .get()?.role === 'admin'
-      );
+      return isAdmin();
     default:
       return false;
   }
 }
 
+/** True while the session row exists, has not expired and its account still exists. */
+export function sessionAlive(db: Db, clock: Clock, sessionId: string): boolean {
+  const row = db
+    .select({
+      expiresAt: sessions.expiresAt,
+      createdAt: sessions.createdAt,
+      passwordHash: users.passwordHash,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(eq(sessions.id, sessionId))
+    .get();
+  if (!row?.passwordHash) return false;
+  const now = clock.now();
+  return row.expiresAt > now && row.createdAt + SESSION_MAX_MS > now;
+}
+
 /** Handler for `GET /api/events`: forwards the bus events the account may see as a named SSE event. */
-export function sseHandler(deps: SseDeps & { db: Db }) {
+export function sseHandler(deps: SseDeps & { db: Db; clock: Clock }) {
   const pingMs = deps.pingMs ?? SSE_PING_MS;
   return (c: Context) => {
     c.header('X-Accel-Buffering', 'no');
     const userId = c.get('user').id;
+    const sessionId = c.get('sessionId');
     return streamSSE(c, async (stream) => {
       let finish = () => {};
       const finished = new Promise<void>((resolve) => {
         finish = resolve;
       });
       const ignore = () => {};
+      const alive = (): boolean => {
+        try {
+          return sessionAlive(deps.db, deps.clock, sessionId);
+        } catch {
+          return false;
+        }
+      };
       const unsubscribe = deps.bus.subscribe((event) => {
         if (stream.closed || stream.aborted) return;
-        if (!mayReceive(deps.db, userId, event)) return;
+        let allowed = false;
+        try {
+          if (!alive()) {
+            finish();
+            return;
+          }
+          allowed = mayReceive(deps.db, userId, event);
+        } catch {
+          allowed = false;
+        }
+        if (!allowed) return;
         stream
           .writeSSE({ event: event.type, data: JSON.stringify(event.payload) })
           .catch(ignore);
       });
       const ping = setInterval(() => {
-        if (!stream.closed && !stream.aborted)
-          stream.write(': ping\n\n').catch(ignore);
+        if (stream.closed || stream.aborted) return;
+        if (!alive()) {
+          finish();
+          return;
+        }
+        stream.write(': ping\n\n').catch(ignore);
       }, pingMs);
       ping.unref();
       const deregister = deps.registry.add(finish);

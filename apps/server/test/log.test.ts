@@ -54,6 +54,20 @@ describe('redact', () => {
     });
   });
 
+  test('secrets under 8 characters are never replaced inside longer strings', () => {
+    expect(redact('abcdefg and abcdefgh', ['abcdefg', 'abcdefgh'])).toBe(
+      'abcdefg and [redacted]',
+    );
+  });
+
+  test('errors keep their code as errorCode', () => {
+    const err = Object.assign(new Error('boom'), { code: 'ECONNRESET' });
+    expect(redact(err)).toMatchObject({
+      message: 'boom',
+      errorCode: 'ECONNRESET',
+    });
+  });
+
   test('short secrets are redacted only on exact match', () => {
     expect(redact({ a: 'abc', b: 'abcdef-xyz' }, ['abc', ''])).toEqual({
       a: '[redacted]',
@@ -141,8 +155,8 @@ describe('redact hardening', () => {
     });
   });
 
-  test('redacts secrets of 4 characters inside text', () => {
-    expect(redact({ note: 'pw is abcd here' }, ['abcd'])).toEqual({
+  test('redacts secrets of 8 characters inside text', () => {
+    expect(redact({ note: 'pw is abcd1234 here' }, ['abcd1234'])).toEqual({
       note: 'pw is [redacted] here',
     });
   });

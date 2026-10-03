@@ -13,6 +13,7 @@ import {
   generateTemporaryPassword,
   hashPassword,
   hashSessionToken,
+  ipLimiterKey,
   LIMITER_MAX_KEYS,
   needsRehash,
   originCheck,
@@ -26,8 +27,8 @@ import { createTestDb } from './helpers/db.ts';
 
 const PW = 'correct horse';
 let HASH: string;
-beforeAll(() => {
-  HASH = hashPassword(PW);
+beforeAll(async () => {
+  HASH = await hashPassword(PW);
 });
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -42,6 +43,7 @@ function setup(
     withPassword?: boolean;
     defaultLanguage?: 'en' | 'de';
     ipOf?: () => string;
+    minFailureMs?: number;
   } = {},
 ) {
   handle = createTestDb();
@@ -58,6 +60,7 @@ function setup(
     clock,
     cookieSecure: opts.secure ?? true,
     ipOf: opts.ipOf ?? (() => '1.2.3.4'),
+    minFailureMs: opts.minFailureMs ?? 0,
     setupCode: () => SETUP_CODE,
     ...(opts.defaultLanguage ? { defaultLanguage: opts.defaultLanguage } : {}),
   };
@@ -99,14 +102,14 @@ function cookieOf(res: Response): string {
 }
 
 describe('password hashing', () => {
-  it('roundtrips', () => {
+  it('roundtrips', async () => {
     expect(HASH).toMatch(/^scrypt\$1024\$8\$1\$/);
-    expect(verifyPassword(PW, HASH)).toBe(true);
+    expect(await verifyPassword(PW, HASH)).toBe(true);
   });
-  it('rejects wrong password', () => {
-    expect(verifyPassword('nope', HASH)).toBe(false);
+  it('rejects wrong password', async () => {
+    expect(await verifyPassword('nope', HASH)).toBe(false);
   });
-  it('rejects malformed stored values', () => {
+  it('rejects malformed stored values', async () => {
     for (const s of [
       '',
       'scrypt$x',
@@ -114,7 +117,7 @@ describe('password hashing', () => {
       'scrypt$3$8$1$AA==$AA==',
       'scrypt$32768$8$1$!!$??',
     ]) {
-      expect(verifyPassword(PW, s)).toBe(false);
+      expect(await verifyPassword(PW, s)).toBe(false);
     }
   });
 });
@@ -531,7 +534,9 @@ describe('first-run setup', () => {
       role: 'admin',
       mustChangePassword: false,
     });
-    expect(verifyPassword(body.password, user?.passwordHash ?? '')).toBe(true);
+    expect(await verifyPassword(body.password, user?.passwordHash ?? '')).toBe(
+      true,
+    );
     expect(
       db
         .select()
@@ -674,9 +679,9 @@ describe('hash takeover', () => {
     expect(logs.join()).toContain('can be removed');
   });
 
-  it('has no effect once an account has a password', () => {
+  it('has no effect once an account has a password', async () => {
     const { db } = setup();
-    const other = hashPassword('other password');
+    const other = await hashPassword('other password');
     const logs: string[] = [];
     expect(applyHashTakeover(db, other, { info: (m) => logs.push(m) })).toBe(
       false,
@@ -732,12 +737,65 @@ describe('hardening', () => {
     });
   });
 
-  it('bounds limiter memory', () => {
-    const limiter = createLoginRateLimiter(createFakeClock());
+  it('at capacity keeps live keys and blocks unknown new ones', () => {
+    const clock = createFakeClock();
+    const limiter = createLoginRateLimiter(clock);
     for (let i = 0; i < LIMITER_MAX_KEYS + 50; i++)
       limiter.recordFailure(`ip${i}`, `user${i}`);
+    // ip0 is live and was not evicted; a brand-new key is refused.
+    limiter.recordFailure('ip0');
     expect(limiter.isBlocked('ip0')).toBe(false);
-    expect(limiter.isBlocked(`ip${LIMITER_MAX_KEYS + 49}`)).toBe(false);
+    expect(limiter.isBlocked('fresh-ip')).toBe(true);
+    // Once the window passed, expired keys are swept and new keys fit again.
+    clock.advance(16 * 60 * 1000);
+    expect(limiter.isBlocked('fresh-ip')).toBe(false);
+  });
+
+  it('keys IPv6 by /64 and IPv4-mapped IPv6 as IPv4', () => {
+    expect(ipLimiterKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd')).toBe(
+      ipLimiterKey('2001:db8:1:2::1'),
+    );
+    expect(ipLimiterKey('2001:db8:1:2::1')).not.toBe(
+      ipLimiterKey('2001:db8:1:3::1'),
+    );
+    expect(ipLimiterKey('::ffff:1.2.3.4')).toBe('1.2.3.4');
+    expect(ipLimiterKey('::ffff:102:304')).toBe('1.2.3.4');
+    expect(ipLimiterKey('1.2.3.4')).toBe('1.2.3.4');
+    const limiter = createLoginRateLimiter(createFakeClock());
+    for (let i = 0; i < 5; i++)
+      limiter.recordFailure(`2001:db8:1:2:${i}::1`, `u${i}`);
+    expect(limiter.isBlocked('2001:db8:1:2:ffff::9')).toBe(true);
+  });
+
+  it('rejects usernames over 64 characters on login with 400', async () => {
+    const { app } = setup();
+    expect((await login(app, PW, 'x'.repeat(65))).status).toBe(400);
+  });
+
+  it('pads failed logins to the minimum duration, unknown user or wrong password', async () => {
+    const { app } = setup({ minFailureMs: 150 });
+    for (const username of ['admin', 'nobody']) {
+      const t0 = performance.now();
+      expect((await login(app, 'wrong', username)).status).toBe(401);
+      expect(performance.now() - t0).toBeGreaterThanOrEqual(140);
+    }
+  });
+
+  it('does not overwrite a hash changed during the rehash', async () => {
+    const { app, db } = setup();
+    const old = await hashPassword(PW, 2 ** 9);
+    db.update(users).set({ passwordHash: old }).where(eq(users.id, 1)).run();
+    const pending = login(app, PW);
+    // Same tick as the handler's first await: swap the stored hash underneath it.
+    db.update(users)
+      .set({ passwordHash: 'changed-meanwhile' })
+      .where(eq(users.id, 1))
+      .run();
+    await pending;
+    expect(db.select().from(users).get()?.passwordHash).not.toBe(old);
+    expect(db.select().from(users).get()?.passwordHash).toBe(
+      'changed-meanwhile',
+    );
   });
 
   it('rejects passwords over 200 characters with 400', async () => {
@@ -755,20 +813,20 @@ describe('hardening', () => {
 
   it('rehashes a lower-cost hash on successful login and still verifies old hashes', async () => {
     const { app, db } = setup();
-    const old = hashPassword(PW, 2 ** 9);
+    const old = await hashPassword(PW, 2 ** 9);
     expect(needsRehash(old)).toBe(true);
     db.update(users).set({ passwordHash: old }).where(eq(users.id, 1)).run();
     expect((await login(app, PW)).status).toBe(200);
     const stored = db.select().from(users).get()?.passwordHash ?? '';
     expect(stored).not.toBe(old);
     expect(needsRehash(stored)).toBe(false);
-    expect(verifyPassword(PW, stored)).toBe(true);
-    expect(verifyPassword(PW, old)).toBe(true);
+    expect(await verifyPassword(PW, stored)).toBe(true);
+    expect(await verifyPassword(PW, old)).toBe(true);
   });
 
   it('does not rehash after a failed login', async () => {
     const { app, db } = setup();
-    const old = hashPassword(PW, 2 ** 9);
+    const old = await hashPassword(PW, 2 ** 9);
     db.update(users).set({ passwordHash: old }).where(eq(users.id, 1)).run();
     expect((await login(app, 'wrong')).status).toBe(401);
     expect(db.select().from(users).get()?.passwordHash).toBe(old);

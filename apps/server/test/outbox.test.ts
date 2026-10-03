@@ -107,6 +107,7 @@ test('failure backs off, then succeeds once due', async () => {
     payload: expect.objectContaining({
       status: 'sent',
       outboxId: id,
+      ownerId: OWNER_ID,
       broadcasterId: 'b1',
     }),
   });

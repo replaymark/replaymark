@@ -63,8 +63,8 @@ afterEach(() => {
 
 const PW = 'secret pw';
 let HASH: string;
-beforeAll(() => {
-  HASH = hashPassword(PW);
+beforeAll(async () => {
+  HASH = await hashPassword(PW);
 });
 
 function setup(...args: Parameters<typeof createAdminHarness>) {

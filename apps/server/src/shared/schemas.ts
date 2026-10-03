@@ -67,7 +67,7 @@ export const usernameSchema = z
 export const newPasswordSchema = z.string().min(8).max(200);
 
 export const loginInput = z.object({
-  username: z.string().min(1),
+  username: z.string().min(1).max(64),
   password: z.string().min(1).max(200),
 });
 export const setupInput = z.object({

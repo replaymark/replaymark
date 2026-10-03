@@ -284,7 +284,7 @@ describe('POST /internal/users/reset-password', () => {
     const row = db.select().from(users).where(eq(users.id, mia)).get();
     expect(row?.mustChangePassword).toBe(true);
     expect(
-      verifyPassword(body.temporaryPassword, row?.passwordHash ?? ''),
+      await verifyPassword(body.temporaryPassword, row?.passwordHash ?? ''),
     ).toBe(true);
     expect(db.select().from(sessions).all()).toEqual([]);
   });

@@ -118,6 +118,7 @@ export interface AdminAppDeps {
   webDist?: string;
   ipOf?: AuthDeps['ipOf'];
   rateLimiter?: AuthDeps['rateLimiter'];
+  minFailureMs?: AuthDeps['minFailureMs'];
   /** Enables `GET /api/events`; without it the route answers 404. */
   events?: SseDeps;
 }
@@ -650,7 +651,9 @@ export function createAdminRoutes(deps: AdminAppDeps) {
       );
   }
 
-  const events = deps.events ? sseHandler({ ...deps.events, db }) : undefined;
+  const events = deps.events
+    ? sseHandler({ ...deps.events, db, clock })
+    : undefined;
 
   const api = new Hono()
     .use(requireSession({ db, clock, cookieSecure: deps.cookieSecure }))
@@ -1084,7 +1087,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
       }
       return c.json(body);
     })
-    .post('/users', requireAdmin(), zv('json', createUserInput), (c) => {
+    .post('/users', requireAdmin(), zv('json', createUserInput), async (c) => {
       const input = c.req.valid('json');
       const taken = db
         .select({ id: users.id })
@@ -1094,6 +1097,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
       if (taken)
         return c.json(apiError('username_taken', 'Username taken'), 409);
       const temporaryPassword = generateTemporaryPassword();
+      const passwordHash = await hashPassword(temporaryPassword);
       const now = clock.now();
       let id: number;
       try {
@@ -1111,7 +1115,7 @@ export function createAdminRoutes(deps: AdminAppDeps) {
             .values({
               username: input.username,
               email: input.email,
-              passwordHash: hashPassword(temporaryPassword),
+              passwordHash,
               role: input.role,
               mustChangePassword: true,
               mailLanguage: deps.defaultLanguage ?? 'en',
@@ -1134,46 +1138,54 @@ export function createAdminRoutes(deps: AdminAppDeps) {
         });
       }
     })
-    .patch('/users/:id', requireAdmin(), zv('json', patchUserInput), (c) => {
-      const id = Number(c.req.param('id'));
-      const input = c.req.valid('json');
-      const target = Number.isInteger(id)
-        ? db.select().from(users).where(eq(users.id, id)).get()
-        : undefined;
-      if (!target) return c.json(apiError('not_found', 'Unknown user'), 404);
-      if (
-        input.role === 'user' &&
-        target.role === 'admin' &&
-        adminCount(db) <= 1
-      )
-        return c.json(apiError('last_admin', 'Last administrator'), 409);
-      const temporaryPassword = input.resetPassword
-        ? generateTemporaryPassword()
-        : undefined;
-      db.transaction((tx) => {
-        if (input.role) {
-          tx.update(users)
-            .set({ role: input.role })
-            .where(eq(users.id, id))
-            .run();
-        }
-        if (temporaryPassword) {
-          tx.update(users)
-            .set({
-              passwordHash: hashPassword(temporaryPassword),
-              mustChangePassword: true,
-            })
-            .where(eq(users.id, id))
-            .run();
-          tx.delete(sessions).where(eq(sessions.userId, id)).run();
-        }
-      });
-      return c.json(
-        temporaryPassword
-          ? { user: userItem(db, id), temporaryPassword }
-          : { user: userItem(db, id) },
-      );
-    })
+    .patch(
+      '/users/:id',
+      requireAdmin(),
+      zv('json', patchUserInput),
+      async (c) => {
+        const id = Number(c.req.param('id'));
+        const input = c.req.valid('json');
+        const target = Number.isInteger(id)
+          ? db.select().from(users).where(eq(users.id, id)).get()
+          : undefined;
+        if (!target) return c.json(apiError('not_found', 'Unknown user'), 404);
+        if (
+          input.role === 'user' &&
+          target.role === 'admin' &&
+          adminCount(db) <= 1
+        )
+          return c.json(apiError('last_admin', 'Last administrator'), 409);
+        const temporaryPassword = input.resetPassword
+          ? generateTemporaryPassword()
+          : undefined;
+        const temporaryHash = temporaryPassword
+          ? await hashPassword(temporaryPassword)
+          : undefined;
+        db.transaction((tx) => {
+          if (input.role) {
+            tx.update(users)
+              .set({ role: input.role })
+              .where(eq(users.id, id))
+              .run();
+          }
+          if (temporaryHash) {
+            tx.update(users)
+              .set({
+                passwordHash: temporaryHash,
+                mustChangePassword: true,
+              })
+              .where(eq(users.id, id))
+              .run();
+            tx.delete(sessions).where(eq(sessions.userId, id)).run();
+          }
+        });
+        return c.json(
+          temporaryPassword
+            ? { user: userItem(db, id), temporaryPassword }
+            : { user: userItem(db, id) },
+        );
+      },
+    )
     .delete('/users/:id', requireAdmin(), (c) => {
       const id = Number(c.req.param('id'));
       if (id === c.get('user').id)

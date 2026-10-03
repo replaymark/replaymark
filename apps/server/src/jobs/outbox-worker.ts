@@ -44,6 +44,7 @@ export function createOutboxWorker(deps: OutboxWorkerDeps): OutboxWorker {
   function publish(row: Row, status: 'sent' | 'failed') {
     if (!bus) return;
     bus.publish('notification', {
+      ownerId: row.ownerId,
       streamId: row.streamId,
       categoryId: row.categoryId,
       broadcasterId: row.broadcasterId,

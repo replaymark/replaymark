@@ -16,7 +16,7 @@ const SENSITIVE_KEY =
   /token|secret|password|hash|session|authorization|cookie|^code$|setupcode/i;
 export const REDACTED = '[redacted]';
 /** Shorter secrets are only redacted on exact match, to avoid mangling logs. */
-const MIN_SUBSTRING_SECRET_LENGTH = 4;
+const MIN_SUBSTRING_SECRET_LENGTH = 8;
 
 /** Deep-copies `value`, replacing sensitive keys and known secret strings with `[redacted]`. */
 export function redact(
@@ -39,7 +39,15 @@ export function redact(
   const walk = (v: unknown, seen: WeakSet<object>): unknown => {
     if (typeof v === 'string') return scrub(v);
     if (v instanceof Error)
-      return walk({ name: v.name, message: v.message, stack: v.stack }, seen);
+      return walk(
+        {
+          name: v.name,
+          message: v.message,
+          stack: v.stack,
+          ...('code' in v && v.code !== undefined ? { errorCode: v.code } : {}),
+        },
+        seen,
+      );
     if (v === null || typeof v !== 'object') return v;
     if (seen.has(v)) return '[circular]';
     seen.add(v);

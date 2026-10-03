@@ -30,6 +30,8 @@ export interface SubscriptionsEvent {
 }
 
 export interface NotificationEvent {
+  /** The account the mail was queued for; only that account (and admins) receive the event. */
+  ownerId: number;
   streamId: string;
   categoryId: string;
   broadcasterId: string;
