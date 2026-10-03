@@ -200,29 +200,27 @@ async function socialPreview(browser) {
         file,
       ),
     ).toString('base64');
-  const display = font(
-    'big-shoulders-display',
-    'big-shoulders-display-latin-wght-normal.woff2',
-  );
   const body = font(
     'atkinson-hyperlegible-next',
     'atkinson-hyperlegible-next-latin-wght-normal.woff2',
   );
+  const logo = readFileSync(
+    join(root, 'docs/images/logo/logo-dark.svg'),
+  ).toString('base64');
   const shot = readFileSync(join(outDir, 'overview-dark.png')).toString(
     'base64',
   );
   const html = `<!doctype html><meta charset="utf-8"><style>
-@font-face{font-family:D;src:url(data:font/woff2;base64,${display});font-weight:100 900}
 @font-face{font-family:B;src:url(data:font/woff2;base64,${body});font-weight:200 800}
 *{box-sizing:border-box;margin:0}
 body{width:1280px;height:640px;overflow:hidden;background:#10141d;color:#eceef2;font-family:B,sans-serif;position:relative}
 .text{position:absolute;left:72px;top:0;bottom:0;width:520px;display:flex;flex-direction:column;justify-content:center;gap:28px}
-h1{font-family:D;font-size:100px;line-height:.9;font-weight:800;letter-spacing:.01em;text-transform:uppercase}
-h1 i{display:inline-block;width:26px;height:26px;border-radius:50%;background:#e5322d;margin-right:18px;vertical-align:middle;position:relative;top:-8px}
+h1{line-height:0}
+h1 img{height:96px;display:block}
 p{font-size:30px;line-height:1.3;color:#b8c0d0}
 .shot{position:absolute;left:640px;top:96px;width:900px;height:562px;border-radius:14px 0 0 0;border:1px solid #2a3244;overflow:hidden;box-shadow:0 20px 60px #0008}
 .shot img{width:900px;display:block}
-</style><div class="text"><h1><i></i>replaymark</h1><p>Get an email when your streamers go live in the games you care about.</p></div>
+</style><div class="text"><h1><img alt="replaymark" src="data:image/svg+xml;base64,${logo}"></h1><p>Get an email when your streamers go live in the games you care about.</p></div>
 <div class="shot"><img src="data:image/png;base64,${shot}"></div>`;
   const page = await browser.newPage({
     viewport: { width: 1280, height: 640 },

@@ -1,6 +1,12 @@
-# replaymark
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/logo/logo-light.svg">
+    <img alt="replaymark" src="docs/images/logo/logo-light.svg" height="64">
+  </picture>
+</p>
 
-<p>
+<p align="center">
   <a href="https://github.com/replaymark/replaymark/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/replaymark/replaymark/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/replaymark/replaymark/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/replaymark/replaymark"></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
