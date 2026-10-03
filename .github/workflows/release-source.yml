@@ -1,0 +1,22 @@
+name: Release source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  source:
+    name: Release source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only develop may be merged into main
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ]; then
+            echo "::error::Pull requests to main must come from develop (got '$HEAD_REF'). Target develop instead."
+            exit 1
+          fi

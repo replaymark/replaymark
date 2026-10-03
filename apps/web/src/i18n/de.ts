@@ -4,6 +4,7 @@ export const de = {
   app: {
     name: 'replaymark',
     loading: 'Wird geladen …',
+    liveLamp: { one: '{count} Streamer live', other: '{count} Streamer live' },
   },
   nav: {
     overview: 'Übersicht',

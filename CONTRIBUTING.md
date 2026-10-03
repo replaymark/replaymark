@@ -33,9 +33,25 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 ## Commits and branches
 
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(server): ...`, `fix(web): ...`, `docs(openspec): ...`, `chore: ...`, `refactor`, `test`, `style`.
+- Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/): `feat(server): ...`, `fix(web): ...`, `docs(openspec): ...`, `chore: ...`, `refactor`, `test`, `style`, `ci`, `build`. The PR title is checked by the `PR title` workflow; with squash merge the PR title becomes the commit message, so it is what the release is computed from.
 - Work on a feature branch (`feat/...`, `fix/...`, `chore/...`) created from `develop`, and open the pull request against `develop`.
-- `develop` is merged into `main` for releases; releases are tagged `vX.Y.Z`.
+- `develop` is merged into `main` for releases.
+
+## Releases and images
+
+Releases are automatic ([semantic-release](https://semantic-release.gitbook.io/), configured in `.releaserc.json`); do not edit versions or the changelog by hand. The version is computed from the commits since the last release:
+
+- `fix:` (and `perf:`) -> patch (`1.0.0` -> `1.0.1`)
+- `feat:` -> minor (`1.0.0` -> `1.1.0`)
+- `!` after the type (`feat!:`) or a `BREAKING CHANGE:` footer -> major
+- `docs`, `chore`, `ci`, `build`, `test`, `style`, `refactor` -> no release
+
+Every push to `develop` publishes `ghcr.io/replaymark/replaymark:develop` and `:develop-<sha>`. If the commits warrant a release, it also creates a GitHub prerelease `vX.Y.Z-develop.N` and the image tag `:X.Y.Z-develop.N`. A stable release is a merge of `develop` into `main`:
+
+1. Open a pull request `develop` -> `main` and merge it with a merge commit (not squash or rebase), so the individual commits are analysed.
+2. The push to `main` runs `.github/workflows/release.yml`: after the CI gate, semantic-release creates the tag `vX.Y.Z` and the GitHub release with generated notes, then the image is pushed as `:X.Y.Z`, `:X.Y` and `:latest`. If no commit warrants a release, nothing is published.
+
+Do not push release tags by hand. Image tags for users are listed in [docs/operations.md](docs/operations.md#image-tags-and-channels).
 
 ## OpenSpec in short
 
