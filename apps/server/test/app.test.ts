@@ -139,7 +139,10 @@ describe('createApp', () => {
     });
     expect(res.status).toBe(200);
     const again = await app.adminApp.request('http://a.local/api/auth/setup');
-    expect(await again.json()).toEqual({ required: false });
+    expect(await again.json()).toEqual({
+      required: false,
+      defaultLanguage: 'en',
+    });
   });
 
   it('logs no setup code once an account has a password', async () => {

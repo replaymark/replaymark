@@ -49,11 +49,11 @@ if (!root) throw new Error('missing #root');
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <I18nProvider>
-        <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
           <RouterProvider router={router} />
-        </QueryClientProvider>
-      </I18nProvider>
+        </I18nProvider>
+      </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,
 );

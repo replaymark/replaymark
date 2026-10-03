@@ -9,7 +9,7 @@ export const de = {
   nav: {
     overview: 'Übersicht',
     games: 'Spiele',
-    timeline: 'Zeitleiste',
+    timeline: 'Timeline',
     history: 'Verlauf',
     users: 'Benutzer',
     settings: 'Einstellungen',
@@ -58,14 +58,14 @@ export const de = {
     durationHoursMinutes: '{h} Std. {m} Min.',
     durationMinutes: '{m} Min.',
     status: 'Status',
-    syncNever: 'Noch kein Abgleich',
+    syncNever: 'Noch kein Sync',
     tileLive: 'Streamer live',
     onAirCount: '{count} live',
     rosterCount: { one: '{count} Streamer', other: '{count} Streamer' },
     kicker: 'Heute · {date} · {time} Uhr',
     tileSubs: 'Abos aktiv',
-    tileSyncOk: 'Letzter Abgleich ok',
-    tileSyncFailed: 'Abgleich fehlgeschlagen',
+    tileSyncOk: 'Letzter Sync ok',
+    tileSyncFailed: 'Sync fehlgeschlagen',
     tileFailedMails: {
       one: 'Fehlgeschlagene Mail',
       other: 'Fehlgeschlagene Mails',
@@ -90,7 +90,7 @@ export const de = {
     subMissing: 'fehlt',
     liveNow: '{name} ist live',
     attentionTitle: 'Braucht Aufmerksamkeit',
-    attentionSyncFailed: 'Letzter Abgleich um {time} fehlgeschlagen',
+    attentionSyncFailed: 'Letzter Sync um {time} fehlgeschlagen',
     attentionFailedMails: {
       one: '{count} Mail nicht zugestellt',
       other: '{count} Mails nicht zugestellt',
@@ -98,10 +98,10 @@ export const de = {
     attentionLastError: 'Zuletzt: {error}',
     attentionSubError: 'Abo fehlgeschlagen: {name}, {types}',
     attentionSubErrorDetail:
-      'Twitch hat das Abo abgelehnt. Prüfe, ob /webhook über den Reverse Proxy erreichbar ist, und gleiche dann ab.',
+      'Twitch hat das Abo abgelehnt. Prüfe, ob /webhook über den Reverse Proxy erreichbar ist, und starte dann einen Sync.',
     attentionSubMissing: 'Abo fehlt: {name}, {types}',
     attentionSubMissingDetail:
-      'Der nächste Abgleich legt es an; ein Abgleich jetzt behebt es sofort.',
+      'Der nächste Sync legt es an; ein Sync jetzt behebt es sofort.',
     attentionViewHistory: 'Im Verlauf ansehen',
     attentionOpenSubs: 'Abos öffnen',
     attentionMore: { one: '+{count} weitere', other: '+{count} weitere' },
@@ -162,9 +162,9 @@ export const de = {
     sectionNotifications: 'Benachrichtigungen',
     sectionNotificationsHint:
       'Welche Spiele eine Mail auslösen und wer sie bekommt.',
-    sectionSync: 'Abgleich',
+    sectionSync: 'Sync',
     sectionSyncHint: 'Wie replaymark die Twitch-Abos aktuell hält.',
-    sectionTimeline: 'Zeitleiste',
+    sectionTimeline: 'Timeline',
     sectionTimelineHint: 'Wie lange vergangene Streams verfügbar bleiben.',
     sectionDiagnostics: 'Diagnose',
     sectionDiagnosticsHint:
@@ -191,12 +191,12 @@ export const de = {
     remove: '{name} entfernen',
   },
   subscriptions: {
-    syncNow: 'Abos jetzt abgleichen',
-    syncing: 'Wird abgeglichen…',
-    synced: 'Abos abgeglichen',
-    syncFailedToast: 'Abgleich mit Fehlern beendet',
+    syncNow: 'Abos jetzt synchronisieren',
+    syncing: 'Wird synchronisiert…',
+    synced: 'Abos synchronisiert',
+    syncFailedToast: 'Sync mit Fehlern beendet',
     unknownStreamer: 'Unbekannt ({id})',
-    tileNext: 'Nächster Abgleich',
+    tileNext: 'Nächster Sync',
     nextDue: 'Jetzt fällig',
     nextMin: 'in {n} Min.',
     nextHours: 'in {n} Std.',
@@ -205,7 +205,7 @@ export const de = {
       'Twitch hat das Abo abgelehnt (Status {status}). Prüfe, ob /webhook über den Reverse Proxy erreichbar ist.',
     errorDetailPlain:
       'Twitch hat das Abo abgelehnt. Prüfe, ob /webhook über den Reverse Proxy erreichbar ist.',
-    missingDetail: 'Noch nicht angelegt. Der nächste Abgleich legt es an.',
+    missingDetail: 'Noch nicht angelegt. Der nächste Sync legt es an.',
     createAgain: 'Erneut anlegen',
   },
   history: {
@@ -238,7 +238,7 @@ export const de = {
     pageOf: 'Seite {page} von {pages}',
   },
   timeline: {
-    title: 'Zeitleiste',
+    title: 'Timeline',
     game: 'Spiel',
     gamePlaceholder: 'Spiel suchen',
     recorded: 'Aufgezeichnete Spiele',
@@ -282,7 +282,7 @@ export const de = {
       'Twitch behält VODs 7 bis 60 Tage, der Link funktioniert eventuell nicht mehr.',
     openVod: 'VOD öffnen',
     details: 'Alle Spiele dieses Streams',
-    back: 'Zurück zur Zeitleiste',
+    back: 'Zurück zur Timeline',
     detailTitle: 'Stream am {date}',
     strip: 'Spiele in diesem Stream, nach Dauer',
     legend: 'Alle Spiele dieses Streams mit Zeiten',
@@ -293,7 +293,7 @@ export const de = {
   },
   settings: {
     title: 'Einstellungen',
-    kicker: 'Benachrichtigungen und Abgleich',
+    kicker: 'Benachrichtigungen und Sync',
     recipients: 'Mail-Empfänger',
     recipientsHint: 'Alle auf dieser Liste bekommen die Live-Mails.',
     recipientAdd: 'Hinzufügen',
@@ -304,13 +304,13 @@ export const de = {
       'Gib eine vollständige Mail-Adresse ein, z. B. name@beispiel.de.',
     recipientDuplicate: 'Diese Adresse steht schon auf der Liste.',
     recipientsRequired: 'Füge mindestens einen Mail-Empfänger hinzu.',
-    interval: 'Abgleich-Intervall',
+    interval: 'Sync-Intervall',
     intervalHint: '1 bis 168 Stunden',
     intervalUnit: 'Stunden',
     intervalInvalid: 'Gib eine ganze Zahl von 1 bis 168 ein.',
-    retention: 'Zeitleiste aufbewahren',
+    retention: 'Timeline aufbewahren',
     retentionHint:
-      'Wie viele Tage Spielabschnitte in der Zeitleiste bleiben. 0 = unbegrenzt behalten.',
+      'Wie viele Tage Spielabschnitte in der Timeline bleiben. 0 = unbegrenzt behalten.',
     retentionUnit: 'Tage',
     retentionInvalid: 'Gib eine ganze Zahl von 0 bis 3650 ein.',
     mailLanguage: 'Sprache der Mails',
@@ -324,9 +324,9 @@ export const de = {
     sectionNotifications: 'Benachrichtigungen',
     sectionNotificationsHint:
       'Welche Spiele eine Mail auslösen und wer sie bekommt.',
-    sectionSync: 'Abgleich',
+    sectionSync: 'Sync',
     sectionSyncHint: 'Wie replaymark die Twitch-Abos aktuell hält.',
-    sectionTimeline: 'Zeitleiste',
+    sectionTimeline: 'Timeline',
     sectionTimelineHint: 'Wie lange vergangene Streams verfügbar bleiben.',
     sectionDiagnostics: 'Diagnose',
     sectionDiagnosticsHint:
@@ -347,7 +347,7 @@ export const de = {
     testMailSent: 'Testmail verschickt',
     syncTitle: 'Twitch-Sync',
     syncHint:
-      'Letzter Abgleich, Abo-Zahlen und die Abos, die Aufmerksamkeit brauchen.',
+      'Letzter Sync, Abo-Zahlen und die Abos, die Aufmerksamkeit brauchen.',
     syncNoProblems: 'Keine Probleme. Alle Abos sind vorhanden.',
     callbackUrl: 'Callback-URL',
     callbackUrlHint:
@@ -356,10 +356,10 @@ export const de = {
   setup: {
     title: 'replaymark einrichten',
     intro:
-      'Lege das erste Administrator-Konto an. Dafür brauchst du den einmaligen Einrichtungscode aus dem Server-Log.',
-    code: 'Einrichtungscode',
+      'Lege das erste Administrator-Konto an. Dafür brauchst du den einmaligen Setup-Code aus dem Server-Log.',
+    code: 'Setup-Code',
     codeHint: 'Du findest ihn im Server-Log, z. B. mit docker logs',
-    codeRequired: 'Gib den Einrichtungscode ein.',
+    codeRequired: 'Gib den Setup-Code ein.',
     username: 'Benutzername',
     usernameRequired: 'Gib einen Benutzernamen ein.',
     email: 'Mail-Adresse',
@@ -476,7 +476,7 @@ export const de = {
     forbidden: 'Dafür fehlt dir die Berechtigung.',
     password_change_required: 'Du musst zuerst dein Passwort ändern.',
     invalid_setup_code:
-      'Der Einrichtungscode stimmt nicht. Du findest ihn im Server-Log.',
+      'Der Setup-Code stimmt nicht. Du findest ihn im Server-Log.',
     setup_completed: 'Die Einrichtung ist bereits abgeschlossen.',
     rate_limited:
       'Zu viele Fehlversuche. Warte ein paar Minuten, bevor du es erneut versuchst.',

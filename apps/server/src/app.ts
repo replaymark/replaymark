@@ -180,6 +180,7 @@ export function createApp(deps: AppDeps) {
     mailer,
     adminUrl: env.PUBLIC_BASE_URL,
     callbackUrl: env.TWITCH_CALLBACK_URL,
+    defaultLanguage: env.DEFAULT_LANGUAGE,
     setupCode: () => (isSetupRequired(db) ? setupCode : undefined),
     cookieSecure: env.ADMIN_COOKIE_SECURE,
     webDist: deps.webDist ?? env.WEB_DIST ?? DEFAULT_WEB_DIST,
