@@ -2,9 +2,12 @@ import {
   createHash,
   randomBytes,
   randomInt,
-  scryptSync,
+  type ScryptOptions,
+  scrypt,
   timingSafeEqual,
 } from 'node:crypto';
+import { isIPv6 } from 'node:net';
+import { promisify } from 'node:util';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
@@ -51,7 +54,17 @@ declare module 'hono' {
 
 // ---------- password hashing ----------
 
-const SCRYPT_N = 2 ** 15;
+/**
+ * Cost of new hashes (128 MiB per hash). The env override is honoured under Vitest
+ * only; production always uses 2^17.
+ */
+const SCRYPT_N = (() => {
+  if (!process.env.VITEST) return 2 ** 17;
+  const test = Number(process.env.REPLAYMARK_TEST_SCRYPT_N);
+  return Number.isInteger(test) && test >= 2 && (test & (test - 1)) === 0
+    ? test
+    : 2 ** 17;
+})();
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SALT_BYTES = 32;
@@ -61,20 +74,74 @@ function maxmemFor(n: number, r: number, p: number): number {
   return 128 * n * r * p + 128 * r * (p + 2) + 1024 * 1024;
 }
 
-export function hashPassword(pw: string): string {
+const scryptAsync = promisify(scrypt) as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  options: ScryptOptions,
+) => Promise<Buffer>;
+
+/** At most this many scrypt runs (128 MiB each at N=2^17) are in flight at once. */
+const MAX_CONCURRENT_HASHES = 2;
+let activeHashes = 0;
+/** Hashes waiting for a slot beyond this are refused instead of queued without bound. */
+export const MAX_HASH_QUEUE = 32;
+const hashWaiters: (() => void)[] = [];
+
+/** Thrown before hashing when the wait queue is full; callers answer 429 `rate_limited`. */
+export class HashQueueFullError extends Error {
+  constructor() {
+    super('password hashing queue is full');
+    this.name = 'HashQueueFullError';
+  }
+}
+
+async function withHashSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (activeHashes >= MAX_CONCURRENT_HASHES) {
+    if (hashWaiters.length >= MAX_HASH_QUEUE) throw new HashQueueFullError();
+    await new Promise<void>((resolve) => hashWaiters.push(resolve));
+  } else {
+    activeHashes++;
+  }
+  try {
+    return await work();
+  } finally {
+    // Hand the slot straight to the next waiter, otherwise free it.
+    const next = hashWaiters.shift();
+    if (next) next();
+    else activeHashes--;
+  }
+}
+
+export async function hashPassword(
+  pw: string,
+  n: number = SCRYPT_N,
+): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
-  const hash = scryptSync(pw, salt, KEY_BYTES, {
-    N: SCRYPT_N,
-    r: SCRYPT_R,
-    p: SCRYPT_P,
-    maxmem: maxmemFor(SCRYPT_N, SCRYPT_R, SCRYPT_P),
-  });
-  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
+  const hash = await withHashSlot(() =>
+    scryptAsync(pw, salt, KEY_BYTES, {
+      N: n,
+      r: SCRYPT_R,
+      p: SCRYPT_P,
+      maxmem: maxmemFor(n, SCRYPT_R, SCRYPT_P),
+    }),
+  );
+  return `scrypt$${n}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+/** True when `stored` is a valid-looking scrypt hash with lower cost than new hashes get. */
+export function needsRehash(stored: string): boolean {
+  const [scheme, n, r, p] = stored.split('$');
+  if (scheme !== 'scrypt') return false;
+  return Number(n) < SCRYPT_N || Number(r) < SCRYPT_R || Number(p) < SCRYPT_P;
 }
 
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
-export function verifyPassword(pw: string, stored: string): boolean {
+export async function verifyPassword(
+  pw: string,
+  stored: string,
+): Promise<boolean> {
   const parts = stored.split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
   const [, nS, rS, pS, saltS, hashS] = parts as [
@@ -99,14 +166,17 @@ export function verifyPassword(pw: string, stored: string): boolean {
   const expected = Buffer.from(hashS, 'base64');
   if (salt.length === 0 || expected.length < 16) return false;
   try {
-    const actual = scryptSync(pw, salt, expected.length, {
-      N: n,
-      r,
-      p,
-      maxmem: maxmemFor(n, r, p),
-    });
+    const actual = await withHashSlot(() =>
+      scryptAsync(pw, salt, expected.length, {
+        N: n,
+        r,
+        p,
+        maxmem: maxmemFor(n, r, p),
+      }),
+    );
     return timingSafeEqual(actual, expected);
-  } catch {
+  } catch (error) {
+    if (error instanceof HashQueueFullError) throw error;
     return false;
   }
 }
@@ -115,6 +185,8 @@ export function verifyPassword(pw: string, stored: string): boolean {
 
 export const SESSION_COOKIE = 'replaymark_session';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Absolute cap: a session ends this long after login, however active. */
+export const SESSION_MAX_MS = 90 * 24 * 60 * 60 * 1000;
 const SLIDE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export function hashSessionToken(token: string): string {
@@ -162,6 +234,7 @@ export function checkSession(
   const row = db
     .select({
       expiresAt: sessions.expiresAt,
+      createdAt: sessions.createdAt,
       lastSeenAt: sessions.lastSeenAt,
       id: users.id,
       username: users.username,
@@ -175,7 +248,8 @@ export function checkSession(
     .get();
   if (!row?.passwordHash) return { state: 'invalid' };
   const now = clock.now();
-  if (row.expiresAt <= now) {
+  const hardEnd = row.createdAt + SESSION_MAX_MS;
+  if (row.expiresAt <= now || hardEnd <= now) {
     db.delete(sessions).where(eq(sessions.id, id)).run();
     return { state: 'invalid' };
   }
@@ -187,7 +261,10 @@ export function checkSession(
   };
   if (now - row.lastSeenAt > SLIDE_AFTER_MS) {
     db.update(sessions)
-      .set({ expiresAt: now + SESSION_TTL_MS, lastSeenAt: now })
+      .set({
+        expiresAt: Math.min(now + SESSION_TTL_MS, hardEnd),
+        lastSeenAt: now,
+      })
       .where(eq(sessions.id, id))
       .run();
     return { state: 'extended', user };
@@ -231,32 +308,163 @@ export function deleteSession(db: Db, cookieValue: string | undefined): void {
 export const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 export const LOGIN_MAX_FAILURES = 5;
 
+export const LOGIN_MAX_FAILURES_PER_USERNAME = 10;
+/** Upper bound of tracked keys per map; at capacity the stalest key below the limit is evicted. */
+export const LIMITER_MAX_KEYS = 10_000;
+/** A full map is swept for expired keys at most this often. */
+const LIMITER_PRUNE_INTERVAL_MS = 60 * 1000;
+
 export interface LoginRateLimiter {
-  isBlocked(ip: string): boolean;
-  recordFailure(ip: string): void;
+  /** Failures plus in-flight attempts of the keys have reached the limit. */
+  isBlocked(ip: string, username?: string): boolean;
+  recordFailure(ip: string, username?: string): void;
+  /**
+   * Atomically checks the limits and reserves an attempt slot (counted like a failure
+   * until released). Undefined when blocked. Call before the first await of a check.
+   */
+  reserve(ip: string, username?: string): (() => void) | undefined;
 }
 
-/** In-memory: at most 5 failures per IP inside a sliding 15 min window. */
+const limiterKey = (username: string) => username.trim().toLowerCase();
+
+/** Expands an IPv6 address into its 8 hextets; undefined when malformed. */
+function ipv6Groups(ip: string): number[] | undefined {
+  const [head = '', tail, extra] = ip.split('::');
+  if (extra !== undefined) return undefined;
+  const toGroups = (part: string): number[] =>
+    part === '' ? [] : part.split(':').map((g) => Number.parseInt(g, 16));
+  const first = toGroups(head);
+  if (tail === undefined) return first.length === 8 ? first : undefined;
+  const last = toGroups(tail);
+  const fill = 8 - first.length - last.length;
+  if (fill < 1) return undefined;
+  return [...first, ...new Array<number>(fill).fill(0), ...last];
+}
+
+/**
+ * Limiter key of a client address: IPv4 as is, IPv4-mapped IPv6 as the IPv4 address,
+ * other IPv6 as its /64 prefix (one subscriber controls a whole /64).
+ */
+export function ipLimiterKey(raw: string): string {
+  let ip = raw.trim().toLowerCase();
+  const zone = ip.indexOf('%');
+  if (zone >= 0) ip = ip.slice(0, zone);
+  const dotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip);
+  if (dotted?.[1]) return dotted[1];
+  if (!isIPv6(ip)) return ip;
+  const hextets = ip.includes('.') ? undefined : ipv6Groups(ip);
+  if (!hextets || hextets.some((g) => !Number.isInteger(g))) return ip;
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = hextets as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff)
+    return `${g6 >> 8}.${g6 & 255}.${g7 >> 8}.${g7 & 255}`;
+  return `${[g0, g1, g2, g3].map((g) => g.toString(16)).join(':')}::/64`;
+}
+
+/** In-memory: failures inside a sliding 15 min window, per IP (5) and per username (10). */
 export function createLoginRateLimiter(clock: Clock): LoginRateLimiter {
-  const failures = new Map<string, number[]>();
-  const prune = (now: number) => {
-    for (const [ip, times] of failures) {
-      const recent = times.filter((t) => now - t < LOGIN_WINDOW_MS);
-      if (recent.length === 0) failures.delete(ip);
-      else failures.set(ip, recent);
+  interface Tracker {
+    map: Map<string, number[]>;
+    inflight: Map<string, number>;
+    limit: number;
+    prunedAt: number;
+  }
+  const tracker = (limit: number): Tracker => ({
+    map: new Map(),
+    inflight: new Map(),
+    limit,
+    prunedAt: Number.NEGATIVE_INFINITY,
+  });
+  const byIp = tracker(LOGIN_MAX_FAILURES);
+  const byName = tracker(LOGIN_MAX_FAILURES_PER_USERNAME);
+  const recent = (map: Map<string, number[]>, key: string, now: number) => {
+    const times = map.get(key);
+    if (!times) return [];
+    const kept = times.filter((t) => now - t < LOGIN_WINDOW_MS);
+    if (kept.length === 0) map.delete(key);
+    else if (kept.length !== times.length) map.set(key, kept);
+    return kept;
+  };
+  const pending = (t: Tracker, key: string) => t.inflight.get(key) ?? 0;
+  const count = (t: Tracker, key: string, now: number) =>
+    recent(t.map, key, now).length + pending(t, key);
+  /** Sweeps expired keys from a full map, at most once per prune interval. */
+  const prune = (t: Tracker, now: number) => {
+    if (now - t.prunedAt < LIMITER_PRUNE_INTERVAL_MS) return;
+    t.prunedAt = now;
+    for (const k of [...t.map.keys()]) recent(t.map, k, now);
+  };
+  /** True when `key` can be tracked: known, free space, or a key below the limit to evict. */
+  const hasRoom = (t: Tracker, key: string, now: number) => {
+    if (t.map.has(key) || t.map.size < LIMITER_MAX_KEYS) return true;
+    prune(t, now);
+    if (t.map.size < LIMITER_MAX_KEYS) return true;
+    for (const times of t.map.values()) if (times.length < t.limit) return true;
+    return false;
+  };
+  /** Evicts the key below the limit whose last failure is oldest. */
+  const evictOldest = (t: Tracker) => {
+    let victim: string | undefined;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const [k, times] of t.map) {
+      const last = times[times.length - 1] ?? 0;
+      if (times.length < t.limit && last < oldest) {
+        oldest = last;
+        victim = k;
+      }
     }
+    if (victim !== undefined) t.map.delete(victim);
+    return victim !== undefined;
+  };
+  const record = (t: Tracker, key: string, now: number) => {
+    if (!t.map.has(key) && t.map.size >= LIMITER_MAX_KEYS) {
+      prune(t, now);
+      if (t.map.size >= LIMITER_MAX_KEYS && !evictOldest(t)) return;
+    }
+    const list = recent(t.map, key, now);
+    list.push(now);
+    t.map.set(key, list);
+  };
+  const blocked = (t: Tracker, key: string, now: number) =>
+    !hasRoom(t, key, now) || count(t, key, now) >= t.limit;
+  const isBlocked = (ip: string, username?: string) => {
+    const now = clock.now();
+    if (blocked(byIp, ipLimiterKey(ip), now)) return true;
+    return username !== undefined && blocked(byName, limiterKey(username), now);
+  };
+  const bump = (t: Tracker, key: string, by: number) => {
+    const n = pending(t, key) + by;
+    if (n <= 0) t.inflight.delete(key);
+    else t.inflight.set(key, n);
   };
   return {
-    isBlocked(ip) {
-      prune(clock.now());
-      return (failures.get(ip)?.length ?? 0) >= LOGIN_MAX_FAILURES;
-    },
-    recordFailure(ip) {
+    isBlocked,
+    recordFailure(ip, username) {
       const now = clock.now();
-      prune(now);
-      const list = failures.get(ip) ?? [];
-      list.push(now);
-      failures.set(ip, list);
+      record(byIp, ipLimiterKey(ip), now);
+      if (username !== undefined) record(byName, limiterKey(username), now);
+    },
+    reserve(ip, username) {
+      if (isBlocked(ip, username)) return undefined;
+      const ipKey = ipLimiterKey(ip);
+      const nameKey = username === undefined ? undefined : limiterKey(username);
+      bump(byIp, ipKey, 1);
+      if (nameKey !== undefined) bump(byName, nameKey, 1);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        bump(byIp, ipKey, -1);
+        if (nameKey !== undefined) bump(byName, nameKey, -1);
+      };
     },
   };
 }
@@ -273,6 +481,18 @@ export interface AuthDeps {
   setupCode?: () => string | undefined;
   rateLimiter?: LoginRateLimiter;
   ipOf?: (c: Context) => string;
+  /** Failed logins take at least this long (ms); default 400. Injectable for tests. */
+  minFailureMs?: number;
+  /** Hashes the dummy password for unknown usernames; default `hashPassword`. Injectable for tests. */
+  dummyHasher?: (pw: string) => Promise<string>;
+}
+
+export const MIN_FAILURE_MS = 400;
+
+/** Waits until `minMs` have passed since `startedAt` (monotonic ms). */
+async function padTo(startedAt: number, minMs: number): Promise<void> {
+  const wait = minMs - (performance.now() - startedAt);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 }
 
 export function defaultIpOf(c: Context): string {
@@ -416,13 +636,6 @@ export function applyHashTakeover(
 
 // ---------- routes ----------
 
-// Verified against when the username is unknown, so both failures take equally long.
-let dummyHash: string | undefined;
-function verifyAgainstDummy(pw: string): void {
-  dummyHash ??= hashPassword(randomBytes(8).toString('hex'));
-  verifyPassword(pw, dummyHash);
-}
-
 function fieldErrors(error: {
   issues: readonly { path: PropertyKey[]; message: string }[];
 }): Record<string, string[]> {
@@ -447,7 +660,8 @@ async function readJson(c: Context): Promise<unknown> {
 /** Fills the first account (username, email, password, role admin) and makes its email a recipient. */
 function claimFirstAccount(
   db: Db,
-  input: { username: string; email: string; password: string },
+  input: { username: string; email: string },
+  passwordHash: string,
   now: number,
   mailLanguage: 'en' | 'de',
 ): number | undefined {
@@ -462,7 +676,7 @@ function claimFirstAccount(
     const values = {
       username: input.username,
       email: input.email,
-      passwordHash: hashPassword(input.password),
+      passwordHash,
       role: 'admin' as const,
       mustChangePassword: false,
       mailLanguage,
@@ -493,6 +707,37 @@ export function createAuthRoutes(deps: AuthDeps) {
   const ipOf = deps.ipOf ?? defaultIpOf;
   const tooMany = (c: Context) =>
     c.json(apiError('rate_limited', 'Too many failed attempts'), 429);
+  // Verified against when the username is unknown, so both failures take equally long.
+  // A rejected computation is dropped so the next attempt retries it.
+  let dummyHash: Promise<string> | undefined;
+  const verifyAgainstDummy = async (pw: string): Promise<void> => {
+    dummyHash ??= (deps.dummyHasher ?? hashPassword)(
+      randomBytes(8).toString('hex'),
+    ).catch((error: unknown) => {
+      dummyHash = undefined;
+      throw error;
+    });
+    try {
+      await verifyPassword(pw, await dummyHash);
+    } catch (error) {
+      // Only a full queue changes the answer, and it does so for known users too.
+      if (error instanceof HashQueueFullError) throw error;
+    }
+  };
+  /** Upgrades an old hash; skipped when the hash queue is full, the next login retries. */
+  const rehash = async (id: number, old: string, password: string) => {
+    let next: string;
+    try {
+      next = await hashPassword(password);
+    } catch (error) {
+      if (error instanceof HashQueueFullError) return;
+      throw error;
+    }
+    db.update(users)
+      .set({ passwordHash: next })
+      .where(and(eq(users.id, id), eq(users.passwordHash, old)))
+      .run();
+  };
   return new Hono()
     .get('/setup', (c) =>
       c.json({
@@ -522,9 +767,17 @@ export function createAuthRoutes(deps: AuthDeps) {
         limiter.recordFailure(ip);
         return c.json(apiError('invalid_setup_code', 'Wrong setup code'), 401);
       }
+      let passwordHash: string;
+      try {
+        passwordHash = await hashPassword(parsed.data.password);
+      } catch (error) {
+        if (error instanceof HashQueueFullError) return tooMany(c);
+        throw error;
+      }
       const id = claimFirstAccount(
         db,
         parsed.data,
+        passwordHash,
         clock.now(),
         deps.defaultLanguage ?? 'en',
       );
@@ -535,6 +788,7 @@ export function createAuthRoutes(deps: AuthDeps) {
       return c.json({ authenticated: true as const });
     })
     .post('/login', async (c) => {
+      const startedAt = performance.now();
       const ip = ipOf(c);
       if (limiter.isBlocked(ip)) return tooMany(c);
       const parsed = loginInput.safeParse(await readJson(c));
@@ -542,27 +796,40 @@ export function createAuthRoutes(deps: AuthDeps) {
         return c.json(apiError('validation_failed', 'Invalid body'), 400);
       }
       const { username, password } = parsed.data;
-      const account = db
-        .select({ id: users.id, hash: users.passwordHash })
-        .from(users)
-        .where(sql`lower(${users.username}) = lower(${username.trim()})`)
-        .get();
-      if (!account?.hash) {
-        verifyAgainstDummy(password);
-      }
-      if (!account?.hash || !verifyPassword(password, account.hash)) {
-        limiter.recordFailure(ip);
-        return c.json(
-          apiError('invalid_password', 'Wrong username or password'),
-          401,
+      // Reserved before the first await so parallel attempts cannot all pass the check.
+      const release = limiter.reserve(ip, username);
+      if (!release) return tooMany(c);
+      try {
+        const account = db
+          .select({ id: users.id, hash: users.passwordHash })
+          .from(users)
+          .where(sql`lower(${users.username}) = lower(${username.trim()})`)
+          .get();
+        if (!account?.hash) await verifyAgainstDummy(password);
+        if (!account?.hash || !(await verifyPassword(password, account.hash))) {
+          limiter.recordFailure(ip, username);
+          release();
+          // Same duration whatever the stored hash cost, or whether the user exists.
+          await padTo(startedAt, deps.minFailureMs ?? MIN_FAILURE_MS);
+          return c.json(
+            apiError('invalid_password', 'Wrong username or password'),
+            401,
+          );
+        }
+        if (needsRehash(account.hash))
+          await rehash(account.id, account.hash, password);
+        setSessionCookie(
+          c,
+          createSession(db, clock, account.id),
+          deps.cookieSecure,
         );
+        return c.json({ authenticated: true as const });
+      } catch (error) {
+        if (error instanceof HashQueueFullError) return tooMany(c);
+        throw error;
+      } finally {
+        release();
       }
-      setSessionCookie(
-        c,
-        createSession(db, clock, account.id),
-        deps.cookieSecure,
-      );
-      return c.json({ authenticated: true as const });
     })
     .post('/logout', (c) => {
       deleteSession(db, getCookie(c, SESSION_COOKIE));
@@ -640,11 +907,9 @@ export function createAccountRoutes(
     })
     .post('/password', async (c) => {
       const ip = ipOf(c);
-      if (limiter.isBlocked(ip))
-        return c.json(
-          apiError('rate_limited', 'Too many failed attempts'),
-          429,
-        );
+      const tooMany = () =>
+        c.json(apiError('rate_limited', 'Too many failed attempts'), 429);
+      if (limiter.isBlocked(ip)) return tooMany();
       const parsed = changePasswordInput.safeParse(await readJson(c));
       if (!parsed.success) {
         return c.json(
@@ -657,25 +922,36 @@ export function createAccountRoutes(
         );
       }
       const { id } = c.get('user');
-      const row = db
-        .select({ hash: users.passwordHash })
-        .from(users)
-        .where(eq(users.id, id))
-        .get();
-      if (
-        !row?.hash ||
-        !verifyPassword(parsed.data.currentPassword, row.hash)
-      ) {
-        limiter.recordFailure(ip);
-        return c.json(
-          apiError('invalid_password', 'Current password is wrong'),
-          400,
-        );
+      const release = limiter.reserve(ip);
+      if (!release) return tooMany();
+      let newHash: string;
+      try {
+        const row = db
+          .select({ hash: users.passwordHash })
+          .from(users)
+          .where(eq(users.id, id))
+          .get();
+        if (
+          !row?.hash ||
+          !(await verifyPassword(parsed.data.currentPassword, row.hash))
+        ) {
+          limiter.recordFailure(ip);
+          return c.json(
+            apiError('invalid_password', 'Current password is wrong'),
+            400,
+          );
+        }
+        newHash = await hashPassword(parsed.data.newPassword);
+      } catch (error) {
+        if (error instanceof HashQueueFullError) return tooMany();
+        throw error;
+      } finally {
+        release();
       }
       db.transaction((tx) => {
         tx.update(users)
           .set({
-            passwordHash: hashPassword(parsed.data.newPassword),
+            passwordHash: newHash,
             mustChangePassword: false,
           })
           .where(eq(users.id, id))

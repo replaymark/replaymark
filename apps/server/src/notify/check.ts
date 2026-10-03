@@ -68,12 +68,17 @@ export function maybeNotify(deps: NotifyDeps, broadcasterId: string): boolean {
     );
 
   let any = false;
-  for (const ownerId of owners)
-    if (queueForOwner(deps, ownerId, broadcasterId, state)) any = true;
-  if (any) {
-    deps.bus?.publish('notification', { streamId, categoryId, broadcasterId });
-    deps.onQueued?.();
+  for (const ownerId of owners) {
+    if (!queueForOwner(deps, ownerId, broadcasterId, state)) continue;
+    any = true;
+    deps.bus?.publish('notification', {
+      ownerId,
+      streamId,
+      categoryId,
+      broadcasterId,
+    });
   }
+  if (any) deps.onQueued?.();
   return any;
 }
 
