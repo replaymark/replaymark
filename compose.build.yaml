@@ -1,0 +1,9 @@
+# Source build instead of the GHCR image:
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+services:
+  replaymark:
+    pull_policy: build
+    build:
+      context: .
+      args:
+        VERSION: ${REPLAYMARK_VERSION:-dev}

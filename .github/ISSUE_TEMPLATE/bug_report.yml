@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For security problems use the private "Report a vulnerability" button on the Security tab instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Image tag or git commit (for example `1.0.0`).
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker / compose (GHCR image)
+        - Docker / compose (built from source)
+        - From source (pnpm)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output of `docker compose logs`. Redact secrets (Twitch client secret, webhook secret, SMTP password, password hashes) before pasting.
+      render: shell

@@ -1,0 +1,13 @@
+packages:
+  - 'apps/*'
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - nodemailer@10.0.11
+  - '@tanstack/react-router@1.170.40'
+  - '@tanstack/router-core@1.171.33'
+  - '@tanstack/router-generator@1.167.39'
+  - '@tanstack/router-plugin@1.168.41'

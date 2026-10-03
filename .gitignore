@@ -1,0 +1,17 @@
+node_modules
+dist
+data
+.env
+.serena
+.mcp.json
+
+# design-sync
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+
+# generated locally
+.data/
+.tanstack/

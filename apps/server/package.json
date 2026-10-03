@@ -1,0 +1,40 @@
+{
+  "name": "@replaymark/server",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/replaymark/replaymark.git"
+  },
+  "homepage": "https://github.com/replaymark/replaymark#readme",
+  "bugs": {
+    "url": "https://github.com/replaymark/replaymark/issues"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.ts",
+    "start": "node src/index.ts",
+    "cli": "node src/cli.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "24.19.0",
+    "@types/nodemailer": "8.0.2",
+    "drizzle-kit": "0.31.11",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.1",
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.9",
+    "nodemailer": "10.0.11",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
+  }
+}

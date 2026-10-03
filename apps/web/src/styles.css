@@ -1,0 +1,243 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/big-shoulders-display";
+@import "@fontsource-variable/atkinson-hyperlegible-next";
+
+@custom-variant dark (&:is(.dark *));
+
+/* D11 palette. Tally red is reserved for "live". */
+:root {
+  --paper: #eceef2;
+  --sheet: #ffffff;
+  --ink: #161c28;
+  --muted-ink: #556072;
+  --rule: #d5dae2;
+  --band: #1a2130;
+  --band-ink: #f3f5f9;
+  --live: #e5322d;
+  --crimson: #b4232c;
+  --status-enabled: #2e9e6a;
+  --status-pending: #d99a1e;
+  --status-error: var(--crimson);
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--sheet);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --secondary: var(--paper);
+  --secondary-foreground: var(--ink);
+  --muted: var(--paper);
+  --muted-foreground: var(--muted-ink);
+  --accent: var(--paper);
+  --accent-foreground: var(--ink);
+  --destructive: var(--crimson);
+  --border: var(--rule);
+  --input: var(--rule);
+  --ring: var(--ink);
+  --radius: 8px;
+  --radius-dialog: 10px;
+}
+
+.dark {
+  --paper: #10141d;
+  --sheet: #191f2c;
+  --ink: #e8ecf3;
+  --muted-ink: #9aa5b8;
+  --rule: #2a3244;
+  --band: #0a0d14;
+  --band-ink: #e8ecf3;
+  --crimson: #f07178;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-rule: var(--rule);
+  --color-live: var(--live);
+  --color-band: var(--band);
+  --color-band-ink: var(--band-ink);
+  --color-crimson: var(--crimson);
+  --color-status-enabled: var(--status-enabled);
+  --color-status-pending: var(--status-pending);
+  --color-status-error: var(--status-error);
+
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  /* Only dialogs use xl. */
+  --radius-xl: var(--radius-dialog);
+
+  /* Hairline rules first; shadows stay whisper-quiet. */
+  --shadow-xs: 0 1px 0 rgb(15 20 30 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(15 20 30 / 0.06);
+  --shadow-md: 0 4px 16px -6px rgb(15 20 30 / 0.18);
+  --shadow-lg: 0 12px 32px -12px rgb(15 20 30 / 0.3);
+
+  --font-sans: "Atkinson Hyperlegible Next Variable", system-ui, sans-serif;
+  --font-display:
+    "Big Shoulders Display Variable", "Atkinson Hyperlegible Next Variable",
+    sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  body {
+    @apply min-h-dvh bg-background;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Tally lamp: ignite once, then pulse slowly while live. */
+@keyframes tally-ignite {
+  from {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 0.35;
+  }
+  to {
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--live) 55%, transparent);
+    opacity: 1;
+  }
+}
+
+@keyframes tally-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--live) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 3px 0 color-mix(in srgb, var(--live) 30%, transparent);
+  }
+}
+
+.tally-lamp {
+  display: inline-block;
+  border-radius: 9999px;
+  background: var(--rule);
+}
+
+.tally-lamp[data-live="true"] {
+  background: var(--live);
+  animation:
+    tally-ignite 400ms ease-out both,
+    tally-pulse 2.4s ease-in-out 400ms infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tally-lamp[data-live="true"] {
+    animation: none;
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 50%, transparent);
+  }
+}
+
+/* Timeline strip: the open (live) tail of a segment is hatched. */
+.strip-open {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--muted-ink) 45%, transparent) 4px 6px
+  );
+}
+
+/* Same hatch on ink segments, where the muted one disappears. */
+.strip-open-ink {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--primary-foreground) 35%, transparent) 4px 6px
+  );
+}
+
+/* Cards: white sheet on paper with a hairline and a soft lift. */
+@utility surface {
+  border-width: 1px;
+  border-color: var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  box-shadow: 0 1px 2px rgb(15 20 30 / 0.05);
+}
+
+/* Empty states: dashed frame with a faint broadcast scanline texture. */
+@utility empty-state {
+  border: 1px dashed color-mix(in srgb, var(--muted-ink) 45%, transparent);
+  border-radius: var(--radius);
+  padding: 1.75rem 1.5rem;
+  color: var(--muted-ink);
+  text-align: center;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 3px,
+    color-mix(in srgb, var(--rule) 45%, transparent) 3px 4px
+  );
+}
+
+/* Page titles read like a lower-third caption: a solid band tab + condensed caps. */
+@utility page-title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.875rem;
+  font-family: var(--font-display);
+  font-size: 2.25rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    bottom: 0.1em;
+    width: 5px;
+    border-radius: 2px;
+    background: var(--ink);
+  }
+}
+
+@utility kicker {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-ink);
+}
+
+.dark .surface {
+  box-shadow: none;
+}

@@ -1,0 +1,97 @@
+{
+  "projectId": "9843b300-fbe5-48cf-af73-8c7733c71540",
+  "shape": "package",
+  "pkg": "@replaymark/ds",
+  "globalName": "Replaymark",
+  "readmeHeader": ".design-sync/conventions.md",
+  "buildCmd": "node .design-sync/ds-package/build.mjs",
+  "entry": ".design-sync/ds-package/src/index.ts",
+  "srcDir": "../../apps/web/src/components",
+  "tsconfig": "../../apps/web/tsconfig.json",
+  "cssEntry": "dist/css/replaymark.css",
+  "tokensPkg": "../../../.design-sync/ds-package",
+  "tokensGlob": "dist/tokens/*.css",
+  "provider": {
+    "component": "ReplaymarkProvider"
+  },
+  "docsDir": "../docs",
+  "componentSrcMap": {
+    "ComboboxChip": null,
+    "ComboboxChips": null,
+    "ComboboxChipsInput": null,
+    "ComboboxCollection": null,
+    "ComboboxContent": null,
+    "ComboboxEmpty": null,
+    "ComboboxGroup": null,
+    "ComboboxInput": null,
+    "ComboboxItem": null,
+    "ComboboxLabel": null,
+    "ComboboxList": null,
+    "ComboboxSeparator": null,
+    "ComboboxTrigger": null,
+    "ComboboxValue": null,
+    "DialogClose": null,
+    "DialogContent": null,
+    "DialogDescription": null,
+    "DialogFooter": null,
+    "DialogHeader": null,
+    "DialogOverlay": null,
+    "DialogPortal": null,
+    "DialogTitle": null,
+    "DialogTrigger": null,
+    "InputGroupAddon": null,
+    "InputGroupButton": null,
+    "InputGroupInput": null,
+    "InputGroupText": null,
+    "InputGroupTextarea": null,
+    "PopoverContent": null,
+    "PopoverDescription": null,
+    "PopoverHeader": null,
+    "PopoverTitle": null,
+    "PopoverTrigger": null,
+    "RadioGroupItem": null,
+    "TableBody": null,
+    "TableCaption": null,
+    "TableCell": null,
+    "TableFooter": null,
+    "TableHead": null,
+    "TableHeader": null,
+    "TableRow": null,
+    "TooltipContent": null,
+    "TooltipProvider": null,
+    "TooltipTrigger": null,
+    "ReplaymarkProvider": null
+  },
+  "overrides": {
+    "Dialog": {
+      "cardMode": "single",
+      "viewport": "720x420"
+    },
+    "Popover": {
+      "cardMode": "single",
+      "viewport": "480x300"
+    },
+    "Tooltip": {
+      "cardMode": "single",
+      "viewport": "420x200"
+    },
+    "Toaster": {
+      "cardMode": "single",
+      "viewport": "520x360"
+    },
+    "Combobox": {
+      "cardMode": "single",
+      "primaryStory": "Open",
+      "viewport": "520x380"
+    },
+    "SegmentRow": {
+      "cardMode": "column"
+    },
+    "SegmentStrip": {
+      "cardMode": "column"
+    },
+    "StreamHead": {
+      "cardMode": "column"
+    }
+  }
+}

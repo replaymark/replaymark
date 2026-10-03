@@ -1,0 +1,7 @@
+{
+  "name": "@replaymark/ds",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "types": "dist/types/.design-sync/ds-package/src/index.d.ts"
+}

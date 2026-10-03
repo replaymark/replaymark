@@ -1,0 +1,1 @@
+CREATE INDEX `mail_outbox_stream_idx` ON `mail_outbox` (`stream_id`);

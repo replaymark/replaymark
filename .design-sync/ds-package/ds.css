@@ -1,0 +1,24 @@
+/* Stylesheet shipped to Claude Design: the app's own styles.css (tokens,
+   fonts, base layer, tally/strip classes) compiled with Tailwind. */
+@import "../../apps/web/src/styles.css";
+
+/* Classes used by the authored preview cards. */
+@source "../previews";
+
+/* Layout / typography / colour safelist so designs built in Claude Design
+   can use the everyday utilities even where the app itself doesn't. */
+@source inline("{sm:,md:,lg:,}{flex,inline-flex,grid,inline-grid,block,inline-block,inline,hidden,contents}");
+@source inline("{sm:,md:,lg:,}{flex-row,flex-col,flex-wrap,flex-1,flex-none,grow,shrink-0,items-start,items-center,items-end,items-baseline,items-stretch,justify-start,justify-center,justify-end,justify-between,self-start,self-center,self-end,place-items-center}");
+@source inline("{sm:,md:,lg:,}{grid-cols-{1,2,3,4,5,6,12},col-span-{1,2,3,4,6,12,full}}");
+@source inline("{sm:,md:,lg:,}{gap,gap-x,gap-y,space-x,space-y,p,px,py,pt,pr,pb,pl,m,mx,my,mt,mr,mb,ml}-{0,0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,16,20,24}");
+@source inline("{mx-auto,ml-auto,mr-auto,w-full,w-auto,w-fit,w-screen,h-full,h-auto,h-screen,min-h-dvh,min-h-screen,min-w-0,size-full}");
+@source inline("{w,h,size}-{1,2,3,4,5,6,8,10,12,16,20,24,32,40,48,64}");
+@source inline("{sm:,md:,lg:,}max-w-{xs,sm,md,lg,xl,2xl,3xl,4xl,5xl,6xl,7xl,full,prose}");
+@source inline("{sm:,md:,lg:,}text-{xs,sm,base,lg,xl,2xl,3xl,4xl,5xl,6xl}");
+@source inline("{font-{sans,display,normal,medium,semibold,bold},uppercase,normal-case,tracking-{tight,normal,wide,wider,widest},leading-{none,tight,snug,normal,relaxed},truncate,text-left,text-center,text-right,whitespace-nowrap,tabular-nums,italic,underline}");
+@source inline("{bg,text,border}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,destructive,border,input,ring,paper,sheet,ink,rule,live,crimson,status-enabled,status-pending,status-error,transparent}");
+@source inline("{border,border-0,border-2,border-t,border-b,border-l,border-r,border-y,border-x,border-dashed,divide-y,divide-x,divide-border,rounded-none,rounded-sm,rounded-md,rounded-lg,rounded-xl,rounded-full}");
+@source inline("{relative,absolute,fixed,sticky,inset-0,top-0,right-0,bottom-0,left-0,z-10,z-20,z-50,overflow-hidden,overflow-auto,overflow-x-auto,overflow-y-auto,opacity-50,opacity-70,cursor-pointer,select-none,sr-only,aspect-video,aspect-square,object-cover}");
+@source inline("{hover:,}{bg-paper,bg-sheet,underline,text-foreground}");
+/* The app's own @utility classes (named in conventions.md) always ship. */
+@source inline("{surface,empty-state,page-title,kicker}");

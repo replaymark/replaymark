@@ -1,0 +1,29 @@
+services:
+  replaymark:
+    image: ghcr.io/replaymark/replaymark:${REPLAYMARK_VERSION:-latest}
+    container_name: replaymark
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080" # Webhook, target of the reverse proxy
+      # Admin UI: LAN/VPN only, never public. Set ADMIN_BIND to your LAN IP,
+      # 127.0.0.1 or a Tailscale address (in .env or the shell environment).
+      - "${ADMIN_BIND:-127.0.0.1}:8081:8081"
+    volumes:
+      # Named volume: inherits the image's /data ownership (UID 1000, GID 0, group
+      # writable), so the non-root process can write the database. A host bind mount
+      # must be writable for UID 1000 (or group 0).
+      - replaymark-data:/data
+    # Hardening: the image runs as non-root (1000) and needs no writes outside /data.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Optional memory limit (typical use is well below 256 MB); uncomment to cap it.
+    # mem_limit: 256m
+
+volumes:
+  replaymark-data:

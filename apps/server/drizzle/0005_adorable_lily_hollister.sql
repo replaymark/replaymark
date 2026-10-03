@@ -1,0 +1,1 @@
+CREATE INDEX `streams_broadcaster_ended_idx` ON `streams` (`broadcaster_id`,`ended_at`);
