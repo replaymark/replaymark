@@ -25,6 +25,7 @@ import type { MessageKey } from '@/i18n/core.ts';
 import { useLang, useT } from '@/i18n/i18n.tsx';
 import { api, unwrap } from '@/lib/api.ts';
 import { meQuery } from '@/lib/auth.ts';
+import { overviewQuery } from '@/lib/queries.ts';
 import { useServerEvents } from '@/lib/sse.ts';
 import { type ThemeChoice, useTheme } from '@/lib/theme.tsx';
 import { cn } from '@/lib/utils.ts';
@@ -159,6 +160,7 @@ export function AppShell() {
   const items = isAdmin
     ? [...NAV.slice(0, -1), USERS_NAV, NAV[NAV.length - 1]]
     : NAV;
+  const liveCount = useQuery(overviewQuery).data?.streamers.live ?? 0;
   useServerEvents();
   return (
     <div className="min-h-dvh pb-16 md:pb-0">
@@ -168,7 +170,12 @@ export function AppShell() {
             to="/"
             className="flex items-center gap-2.5 rounded-md focus-visible:outline-band-ink"
           >
-            <TallyLamp live={false} />
+            <TallyLamp
+              live={liveCount > 0}
+              label={
+                liveCount > 0 ? t.plural('app.liveLamp', liveCount) : undefined
+              }
+            />
             <span className="font-display text-2xl leading-none font-extrabold tracking-wide uppercase">
               {t('app.name')}
             </span>

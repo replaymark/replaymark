@@ -2,6 +2,7 @@ export const en = {
   app: {
     name: 'replaymark',
     loading: 'Loading…',
+    liveLamp: { one: '{count} streamer live', other: '{count} streamers live' },
   },
   nav: {
     overview: 'Overview',
