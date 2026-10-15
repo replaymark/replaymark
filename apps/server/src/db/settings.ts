@@ -151,6 +151,19 @@ export function ensureRecordingSince(db: Db, now: number): number {
   return getRecordingSince(db) ?? now;
 }
 
+/** Moves the recording start back to `at` when it lies later (demo history). */
+export function backdateRecordingSince(db: Db, at: number): void {
+  const current = getRecordingSince(db);
+  if (current !== undefined && current <= at) return;
+  db.insert(settings)
+    .values({ key: RECORDING_SINCE_KEY, value: JSON.stringify(at) })
+    .onConflictDoUpdate({
+      target: settings.key,
+      set: { value: JSON.stringify(at) },
+    })
+    .run();
+}
+
 export function getRecordingSince(db: Db): number | undefined {
   const row = db
     .select()
