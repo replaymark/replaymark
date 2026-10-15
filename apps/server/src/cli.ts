@@ -1,7 +1,11 @@
+import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse as parseYaml } from 'yaml';
+import { openDb } from './db/client.ts';
 import type { ImportInput, ImportReport } from './http/internal.ts';
+import { SeedRefusedError, seedDemoData } from './seed.ts';
 import type {
   SubscriptionState,
   SubscriptionType,
@@ -17,12 +21,16 @@ Commands:
   reset-password <username>
                       Set a temporary password for an account and print it once
   import <file.yaml>  Import streamers and default games (old YAML format)
+  seed [--force]      Fill the database with fictional demo data (offline,
+                      for development; stop the server first, refuses a
+                      database with streamers unless --force)
 
 Options:
   -h, --help          Show this help
 
-All commands talk to the running server on
-127.0.0.1:$INTERNAL_PORT (default 8082).`;
+All commands except seed talk to the running server on
+127.0.0.1:$INTERNAL_PORT (default 8082). seed writes to
+$DATA_DIR/replaymark.db (default /data).`;
 
 export class CliError extends Error {}
 
@@ -32,7 +40,8 @@ export type Command =
   | { kind: 'sync' }
   | { kind: 'test-mail' }
   | { kind: 'reset-password'; username: string }
-  | { kind: 'import'; file: string };
+  | { kind: 'import'; file: string }
+  | { kind: 'seed'; force: boolean };
 
 /** Parses argv (without node and script path) into a command. */
 export function parseCommand(argv: readonly string[]): Command {
@@ -40,7 +49,10 @@ export function parseCommand(argv: readonly string[]): Command {
   function parse() {
     return parseArgs({
       args: [...argv],
-      options: { help: { type: 'boolean', short: 'h' } },
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        force: { type: 'boolean' },
+      },
       allowPositionals: true,
       strict: true,
     });
@@ -53,6 +65,9 @@ export function parseCommand(argv: readonly string[]): Command {
   const [cmd, ...rest] = parsed.positionals;
   if (parsed.values.help || cmd === undefined || cmd === 'help') {
     return { kind: 'help' };
+  }
+  if (parsed.values.force && cmd !== 'seed') {
+    throw new CliError("'--force' only applies to 'seed'");
   }
   const noArgs = <T extends Command>(c: T): T => {
     if (rest.length > 0) {
@@ -78,6 +93,8 @@ export function parseCommand(argv: readonly string[]): Command {
       if (extra.length > 0) throw new CliError("'import' takes one file");
       return { kind: 'import', file };
     }
+    case 'seed':
+      return noArgs({ kind: 'seed', force: parsed.values.force === true });
     default:
       throw new CliError(`Unknown command: ${cmd}`);
   }
@@ -238,6 +255,28 @@ async function call<T>(
   return data as T;
 }
 
+/** Seeds the local database file directly; never touches the network. */
+function runSeed(force: boolean, env: NodeJS.ProcessEnv = process.env): number {
+  const dir = env.DATA_DIR || '/data';
+  mkdirSync(dir, { recursive: true });
+  const handle = openDb(join(dir, 'replaymark.db'));
+  try {
+    const r = seedDemoData(handle.db, { force });
+    console.log(
+      `Seeded ${r.streamers} streamers, ${r.streams} streams, ${r.notifications} notifications.`,
+    );
+    console.log(
+      'Sign in as "admin": start the server, then run `node src/cli.ts reset-password admin` and use the printed password.',
+    );
+    return 0;
+  } catch (err) {
+    if (err instanceof SeedRefusedError) throw new CliError(err.message);
+    throw err;
+  } finally {
+    handle.close();
+  }
+}
+
 export async function run(argv: readonly string[]): Promise<number> {
   try {
     const cmd = parseCommand(argv);
@@ -277,6 +316,8 @@ export async function run(argv: readonly string[]): Promise<number> {
         await call(internalPort(), 'POST', 'test-mail');
         console.log('Test mail sent.');
         return 0;
+      case 'seed':
+        return runSeed(cmd.force);
       case 'import': {
         let text: string;
         try {

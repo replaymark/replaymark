@@ -22,6 +22,11 @@ describe('parseCommand', () => {
       kind: 'import',
       file: 'a.yaml',
     });
+    expect(parseCommand(['seed'])).toEqual({ kind: 'seed', force: false });
+    expect(parseCommand(['seed', '--force'])).toEqual({
+      kind: 'seed',
+      force: true,
+    });
   });
 
   it('returns help for no args or --help', () => {
@@ -38,6 +43,8 @@ describe('parseCommand', () => {
     expect(() => parseCommand(['reset-password'])).toThrow(/needs a username/);
     expect(() => parseCommand(['reset-password', 'a', 'b'])).toThrow(CliError);
     expect(() => parseCommand(['--bogus'])).toThrow(CliError);
+    expect(() => parseCommand(['status', '--force'])).toThrow(/only applies/);
+    expect(() => parseCommand(['seed', 'x'])).toThrow(/takes no/);
   });
 
   it('reads INTERNAL_PORT', () => {
