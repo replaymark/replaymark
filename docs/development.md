@@ -23,6 +23,10 @@ The server does not load `.env` itself. Load it into your shell before `pnpm dev
 
 The full gate is `pnpm lint && pnpm typecheck && pnpm test && pnpm build`. Migrations run automatically on start. The server runs directly from `src/*.ts` without a build step.
 
+## Local instance (Compose)
+
+`docker compose -f compose.dev.yaml up -d --build` builds the image from source and runs it with your `.env`. The admin UI is published on port 28103 (`REPLAYMARK_ADMIN_PORT`) on all interfaces, so it is reachable on your LAN over plain HTTP; the webhook listener is published on `127.0.0.1:28180` only. Data lives in the volume `replaymark-dev-data`. The setup code for the first account is printed in `docker logs replaymark-dev`.
+
 ## Structure
 
 - `apps/server`: Hono, Drizzle, Twitch, mail and CLI. Shared schemas and types live in `apps/server/src/shared/`.
