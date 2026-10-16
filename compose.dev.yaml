@@ -1,0 +1,31 @@
+# Local / LAN development instance built from source:
+#   docker compose -f compose.dev.yaml up -d --build   → admin UI on http://<host>:28103
+# Needs a .env (from .env.example). Plain HTTP, so the admin cookie is not marked Secure.
+# The webhook listener is only published on 127.0.0.1; Twitch cannot reach it.
+services:
+  replaymark:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    image: localhost/replaymark:dev
+    container_name: replaymark-dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ADMIN_COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:${REPLAYMARK_WEBHOOK_PORT:-28180}:8080"
+      - "${REPLAYMARK_ADMIN_PORT:-28103}:8081"
+    volumes:
+      - replaymark-dev-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  replaymark-dev-data:
