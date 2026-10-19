@@ -6,7 +6,7 @@
 //      safelist for designs), with Tailwind's internal --tw-* registrations
 //      kept out of Claude Design's token list; the palette goes to
 //      dist/tokens/tokens.css.
-// Run from the repo root: node .design-sync/ds-package/build.mjs
+// Run from the repo root: node .design-sync/ds-package/build.ts
 import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
@@ -19,6 +19,38 @@ import {
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+// The slice of postcss this script touches; postcss itself is resolved at run
+// time from vite's dependency tree, so it has no types here.
+interface CssNode {
+  type: string;
+  prop: string;
+  value: string;
+  params: string;
+  name: string;
+  selector: string;
+  text: string;
+  nodes: CssNode[];
+  parent: CssNode;
+  next(): CssNode | undefined;
+  remove(): void;
+  after(node: CssNode): void;
+  append(node: CssNode): void;
+  clone(): CssNode;
+  some(fn: (n: CssNode) => boolean): boolean;
+  each(fn: (n: CssNode) => void): void;
+  walkAtRules(name: string, fn: (at: CssNode) => void): void;
+  walkDecls(fn: (decl: CssNode) => void): void;
+  walkRules(fn: (rule: CssNode) => void): void;
+}
+interface Postcss {
+  parse(css: string): CssNode;
+  root(): CssNode;
+  comment(init: {
+    text: string;
+    raws: { before: string; left: string; right: string };
+  }): CssNode;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -42,12 +74,12 @@ const aliases = [
   ['@shared/', join(TYPES, 'apps/server/src/shared')],
   ['@server/', join(TYPES, 'apps/server/src')],
 ];
-const walk = (d) =>
+const walk = (d: string): string[] =>
   readdirSync(d).flatMap((n) => {
     const p = join(d, n);
     return statSync(p).isDirectory() ? walk(p) : [p];
   });
-for (const file of walk(TYPES).filter((p) => p.endsWith('.d.ts'))) {
+for (const file of walk(TYPES).filter((p: string) => p.endsWith('.d.ts'))) {
   const src = readFileSync(file, 'utf8');
   const out = src.replace(
     /(from\s+|import\()(['"])([^'"]+)\2/g,
@@ -92,7 +124,7 @@ await build({
 });
 const cssDir = join(DIST, 'css');
 const built = join(cssDir, 'ds.css');
-const postcss = createRequire(req.resolve('vite'))('postcss');
+const postcss = createRequire(req.resolve('vite'))('postcss') as Postcss;
 const root = postcss.parse(readFileSync(built, 'utf8'));
 // Tailwind v4 registers its internal --tw-* variables in an `@layer properties`
 // fallback that sets them on `*` for browsers without @property. Claude Design
@@ -114,8 +146,8 @@ root.walkAtRules('layer', (at) => {
 // Vars that compose across classes (ring + ring-color, translate-x +
 // translate-y, duration + transition, text-* + leading-*) stay: dropping
 // them would change rendering.
-const norm = (v) => v.replace(/\s+/g, ' ').trim();
-const initial = new Map();
+const norm = (v: string) => v.replace(/\s+/g, ' ').trim();
+const initial = new Map<string, string | null>();
 root.walkAtRules('property', (at) => {
   const iv = at.nodes?.find(
     (n) => n.type === 'decl' && n.prop === 'initial-value',
@@ -123,7 +155,7 @@ root.walkAtRules('property', (at) => {
   if (at.params.startsWith('--tw-'))
     initial.set(at.params, iv ? norm(iv.value) : null);
 });
-const touching = new Map();
+const touching = new Map<string, Set<CssNode>>();
 root.walkDecls((d) => {
   if (d.parent.type !== 'rule') return;
   const vars = new Set(
@@ -136,16 +168,17 @@ root.walkDecls((d) => {
     touching.set(v, rules);
   }
 });
-const ownDecl = (rule, v) =>
+const ownDecl = (rule: CssNode, v: string) =>
   rule.nodes.find((n) => n.type === 'decl' && n.prop === v);
-const readers = (rule, v) =>
+const readers = (rule: CssNode, v: string) =>
   rule.nodes.filter(
     (n) =>
       n.type === 'decl' &&
       !n.prop.startsWith('--tw-') &&
       n.value.includes(`var(${v}`),
   );
-const bareVar = (v) => new RegExp(`var\\(${v.replace(/[-]/g, '\\-')}\\)`, 'g');
+const bareVar = (v: string) =>
+  new RegExp(`var\\(${v.replace(/[-]/g, '\\-')}\\)`, 'g');
 let inlined = 0;
 for (const [v, set] of touching) {
   const rules = [...set];
@@ -167,7 +200,7 @@ for (const [v, set] of touching) {
     ),
   );
   if (anyFallback || readByVar) continue;
-  const values = new Set(setters.map((r) => norm(ownDecl(r, v).value)));
+  const values = new Set(setters.map((r) => norm(ownDecl(r, v)?.value ?? '')));
   const constant = values.size === 1 && initial.get(v) === [...values][0];
   const selfContained =
     rules.every((r) => ownDecl(r, v)) &&
@@ -182,7 +215,7 @@ for (const [v, set] of touching) {
   if (!constant && !selfContained) continue;
   for (const r of rules) {
     const own = ownDecl(r, v);
-    const value = constant ? [...values][0] : own.value;
+    const value = constant ? [...values][0] : (own?.value ?? '');
     for (const n of readers(r, v)) n.value = n.value.replace(bareVar(v), value);
     if (own) {
       own.remove();
@@ -207,7 +240,7 @@ root.walkRules((rule) => {
 // declared inside a utility rule.
 const TW_DEFAULTS =
   /^--(?:animate-|aspect-|ease-|perspective-|default-transition-)/;
-const markOther = (decl) => {
+const markOther = (decl: CssNode) => {
   const next = decl.next();
   if (next?.type === 'comment' && next.text === '@kind other') return;
   decl.after(

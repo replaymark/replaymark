@@ -1,9 +1,9 @@
 // Reproducible README screenshots: `pnpm screenshots`.
 //
 // Starts the real server against a throwaway DATA_DIR with dummy Twitch/SMTP
-// settings and with outgoing fetch disabled (no-network.mjs), completes the
+// settings and with outgoing fetch disabled (no-network.ts), completes the
 // first-run setup, seeds fictional demo data and captures docs/images/*.png.
-import { spawn, spawnSync } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -11,11 +11,13 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { Browser, Page } from 'playwright';
 import { chromium } from 'playwright';
-import { seedDemo } from './seed.mjs';
+import { seedDemo } from './seed.ts';
 
 const root = resolve(import.meta.dirname, '../..');
 const outDir = join(root, 'docs/images');
@@ -35,23 +37,27 @@ const BROWSER_ENV = {
 };
 
 function freePort() {
-  return new Promise((ok, fail) => {
+  return new Promise<number>((ok, fail) => {
     const srv = createServer();
     srv.once('error', fail);
     srv.listen(0, '127.0.0.1', () => {
-      const { port } = srv.address();
+      const { port } = srv.address() as AddressInfo;
       srv.close(() => ok(port));
     });
   });
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function until(fn, what, timeoutMs = 30_000) {
+async function until<T>(
+  fn: () => T | Promise<T>,
+  what: string,
+  timeoutMs = 30_000,
+): Promise<NonNullable<Awaited<T>>> {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
     const v = await fn();
-    if (v) return v;
+    if (v) return v as NonNullable<Awaited<T>>;
     await sleep(150);
   }
   throw new Error(`timeout waiting for ${what}`);
@@ -65,9 +71,9 @@ function buildWeb() {
   if (r.status !== 0) throw new Error('web build failed');
 }
 
-let activeChild;
+let activeChild: ChildProcess | undefined;
 
-async function startServer(dataDir) {
+async function startServer(dataDir: string) {
   const [publicPort, adminPort, internalPort] = await Promise.all([
     freePort(),
     freePort(),
@@ -96,14 +102,14 @@ async function startServer(dataDir) {
     process.execPath,
     [
       '--import',
-      join(import.meta.dirname, 'no-network.mjs'),
+      join(import.meta.dirname, 'no-network.ts'),
       'apps/server/src/index.ts',
     ],
     { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] },
   );
   activeChild = child;
   let log = '';
-  const collect = (d) => {
+  const collect = (d: Buffer) => {
     log += d.toString();
   };
   child.stdout.on('data', collect);
@@ -111,7 +117,7 @@ async function startServer(dataDir) {
   child.once('exit', (code) => {
     if (code) console.error(`server exited with ${code}\n${log}`);
   });
-  let code;
+  let code: string;
   try {
     code = await until(
       () => /Setup code: ([A-Z0-9]{5}-[A-Z0-9]{5})/.exec(log)?.[1],
@@ -140,7 +146,7 @@ async function startServer(dataDir) {
   };
 }
 
-async function settle(page) {
+async function settle(page: Page) {
   await page.waitForLoadState('load');
   await page.locator('main, form').first().waitFor();
   await page
@@ -153,12 +159,17 @@ async function settle(page) {
   await sleep(700);
 }
 
-async function capture(page, name) {
+async function capture(page: Page, name: string) {
   await page.screenshot({ path: join(outDir, name) });
   console.log(`wrote ${name}`);
 }
 
-function newContext(browser, base, viewport, theme) {
+function newContext(
+  browser: Browser,
+  base: string,
+  viewport: { width: number; height: number },
+  theme: 'light' | 'dark',
+) {
   return browser
     .newContext({
       baseURL: base,
@@ -189,8 +200,8 @@ async function launch() {
   }
 }
 
-async function socialPreview(browser) {
-  const font = (pkg, file) =>
+async function socialPreview(browser: Browser) {
+  const font = (pkg: string, file: string) =>
     readFileSync(
       join(
         root,
@@ -235,8 +246,8 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   buildWeb();
   const dataDir = mkdtempSync(join(tmpdir(), 'replaymark-shots-'));
-  let server;
-  let browser;
+  let server: Awaited<ReturnType<typeof startServer>> | undefined;
+  let browser: Browser | undefined;
   // Ctrl-C: stop the server before the temp dir disappears underneath it.
   const onSigint = () => {
     activeChild?.kill('SIGTERM');
@@ -247,10 +258,11 @@ async function main() {
   try {
     server = await startServer(dataDir);
     const base = server.admin;
-    browser = await launch();
+    const chrome = await launch();
+    browser = chrome;
 
     // Setup page first, before the account exists.
-    const ctx = await newContext(browser, base, DESKTOP, 'light');
+    const ctx = await newContext(chrome, base, DESKTOP, 'light');
     const page = await ctx.newPage();
     await page.goto('/setup');
     await page.getByLabel(/setup code/i).fill(server.code);
@@ -267,8 +279,11 @@ async function main() {
     const seeded = seedDemo(join(dataDir, 'replaymark.db'), Date.now());
     console.log(`seeded ${seeded.streamers} streamers`);
 
-    const session = async (viewport, theme) => {
-      const c = await newContext(browser, base, viewport, theme);
+    const session = async (
+      viewport: { width: number; height: number },
+      theme: 'light' | 'dark',
+    ) => {
+      const c = await newContext(chrome, base, viewport, theme);
       const login = await c.request.post('/api/auth/login', {
         data: { username: ADMIN.username, password: ADMIN.password },
         headers: { origin: base },
@@ -276,7 +291,12 @@ async function main() {
       if (!login.ok()) throw new Error(`login failed: ${login.status()}`);
       return { c, p: await c.newPage() };
     };
-    const shoot = async (p, path, name, scrollY = 0) => {
+    const shoot = async (
+      p: Page,
+      path: string,
+      name: string,
+      scrollY: number | 'full' = 0,
+    ) => {
       await p.goto(path);
       await settle(p);
       if (scrollY === 'full') {
@@ -321,7 +341,7 @@ async function main() {
       await shoot(p, '/', 'overview-phone.png');
       await c.close();
     }
-    await socialPreview(browser);
+    await socialPreview(chrome);
     optimize();
     report();
   } finally {
@@ -336,10 +356,11 @@ async function main() {
 }
 
 function optimize() {
-  for (const tool of [
+  const tools: [string, string[]][] = [
     ['oxipng', ['-o', '4', '--strip', 'safe']],
     ['pngquant', ['--force', '--ext', '.png', '--skip-if-larger']],
-  ]) {
+  ];
+  for (const tool of tools) {
     if (spawnSync('which', [tool[0]]).status !== 0) continue;
     const files = IMAGES.map((n) => join(outDir, n));
     spawnSync(tool[0], [...tool[1], ...files], { stdio: 'inherit' });
