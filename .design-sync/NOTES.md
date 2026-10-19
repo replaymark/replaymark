@@ -3,22 +3,22 @@
 - **Source shape:** `apps/web` is an app, not a library. `.design-sync/ds-package/` is a thin DS package that /design-sync converts:
   `src/index.ts` re-exports the presentational components from `apps/web/src/components` (+ `toast` from sonner and a
   `ReplaymarkProvider` = Theme + I18n + Tooltip providers, the app root minus router/query). New DS components must be added there.
-- **Build first:** `node .design-sync/ds-package/build.mjs` (cfg.buildCmd) emits the `.d.ts` tree (tsc, aliases `@/`, `@shared/`
+- **Build first:** `node .design-sync/ds-package/build.ts` (cfg.buildCmd) emits the `.d.ts` tree (tsc, aliases `@/`, `@shared/`
   rewritten to relative paths), `dist/css/replaymark.css` (Tailwind compiled via vite from `ds.css`) and `dist/tokens/tokens.css`.
-  Then `node .ds-sync/package-build.mjs --config .design-sync/config.json --node-modules apps/web/node_modules --out ./ds-bundle`.
+  Then `node .ds-sync/package-build.ts --config .design-sync/config.json --node-modules apps/web/node_modules --out ./ds-bundle`.
 - **Install:** `pnpm i --frozen-lockfile --ignore-scripts` (better-sqlite3 needs node-gyp, which isn't installed; server types are
   still needed for tsc). `COREPACK_ENABLE_STRICT=0` if pnpm self-provisioning complains.
-- `.design-sync/ds-package/node_modules` is a symlink to `../../apps/web/node_modules` (gitignored); build.mjs needs it for tsc
+- `.design-sync/ds-package/node_modules` is a symlink to `../../apps/web/node_modules` (gitignored); build.ts needs it for tsc
   to resolve react from `src/provider.tsx` - recreate per clone: `ln -sfn ../../apps/web/node_modules .design-sync/ds-package/node_modules`.
-- **--tw-* tokens (Claude Design complaint):** build.mjs drops Tailwind's `@layer properties` fallback (`*{--tw-…:initial}`) and
+- **--tw-* tokens (Claude Design complaint):** build.ts drops Tailwind's `@layer properties` fallback (`*{--tw-…:initial}`) and
   rewrites single-class utilities that set `--tw-*` to `:is(.x)` (same specificity) so they don't register as token scopes/themes.
   `@property --tw-*` rules stay, so every var still has its initial value.
-- **`/* @kind other */` markers (Claude Design request after the 2026-09-28 sync):** build.mjs appends a same-line
+- **`/* @kind other */` markers (Claude Design request after the 2026-09-28 sync):** build.ts appends a same-line
   `/* @kind other */` to (a) Tailwind's non-theme defaults in `@layer theme` (`--animate-*`, `--aspect-*`, `--ease-*`,
   `--perspective-*`, `--default-transition-*`) and (b) every `--tw-*` declaration inside a utility rule. Claude Design flagged
   them as "unassigned tokens" / "variables under utility selectors" - warnings only, rendering is unaffected. If the
   app still lists them, check which annotation placement it expects (same line after `;` is the current guess).
-- **--tw-* inlining (Claude Design still reported 221 "--tw-* on utility classes" after the markers):** build.mjs now
+- **--tw-* inlining (Claude Design still reported 221 "--tw-* on utility classes" after the markers):** build.ts now
   substitutes and deletes every --tw-* var whose value can't depend on another class (always equal to its @property
   initial-value, e.g. `--tw-space-*-reverse`; or set and read only inside the same rules, e.g. `--tw-font-weight`,
   `--tw-tracking`). 221 -> ~79. Verified lossless: computed styles of every element in all 23 cards identical

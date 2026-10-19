@@ -4,7 +4,7 @@
   "pkg": "@replaymark/ds",
   "globalName": "Replaymark",
   "readmeHeader": ".design-sync/conventions.md",
-  "buildCmd": "node .design-sync/ds-package/build.mjs",
+  "buildCmd": "node .design-sync/ds-package/build.ts",
   "entry": ".design-sync/ds-package/src/index.ts",
   "srcDir": "../../apps/web/src/components",
   "tsconfig": "../../apps/web/tsconfig.json",

@@ -21,6 +21,20 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+type GameKey = keyof typeof GAMES;
+type Streamer = {
+  id: string;
+  login: string;
+  name: string;
+  liveStream?: {
+    streamId: string;
+    k: GameKey;
+    title: string;
+    startedAt: number;
+  };
+};
+type MailInsert = typeof mailOutbox.$inferInsert;
+
 const GAMES = {
   elden: { id: '512953', name: 'Elden Ring' },
   ds3: { id: '490292', name: 'Dark Souls III' },
@@ -32,7 +46,7 @@ const GAMES = {
 };
 
 // Fictional channels; avatars stay null so the UI shows initials.
-const STREAMERS = [
+const STREAMERS: Streamer[] = [
   { id: '90000001', login: 'quietfox', name: 'QuietFox' },
   { id: '90000002', login: 'pixelmoth', name: 'PixelMoth' },
   { id: '90000003', login: 'lanternlane', name: 'LanternLane' },
@@ -43,7 +57,7 @@ const STREAMERS = [
   { id: '90000008', login: 'saltandember', name: 'SaltAndEmber' },
 ];
 
-const TITLES = {
+const TITLES: Record<GameKey, string[]> = {
   elden: [
     'Shadow of the Erdtree, no summons',
     'Blind run, boss rush night',
@@ -58,7 +72,7 @@ const TITLES = {
 };
 
 /** Per streamer: [game key list per past stream]; used to build streams and segments. */
-const HISTORY = {
+const HISTORY: Record<string, GameKey[][]> = {
   quietfox: [['elden'], ['elden', 'chatting'], ['ds3', 'elden'], ['elden']],
   pixelmoth: [['acnh'], ['acnh', 'minecraft'], ['minecraft']],
   lanternlane: [['phasmo'], ['phasmo', 'dbd'], ['chatting', 'phasmo']],
@@ -70,7 +84,7 @@ const HISTORY = {
 };
 
 /** Deterministic pseudo-random so every run produces the same demo. */
-function rng(seed) {
+function rng(seed: number) {
   let s = seed;
   return () => {
     s = (s * 1664525 + 1013904223) % 4294967296;
@@ -78,11 +92,11 @@ function rng(seed) {
   };
 }
 
-export function seedDemo(file, now) {
+export function seedDemo(file: string, now: number) {
   const handle = openDb(file);
   const { db, sqlite } = handle;
   const rand = rng(42);
-  const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+  const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)];
 
   const admin = db
     .select()
@@ -118,7 +132,12 @@ export function seedDemo(file, now) {
       .run();
   }
 
-  const group = (ownerId, name, isDefault, keys) => {
+  const group = (
+    ownerId: number,
+    name: string,
+    isDefault: boolean,
+    keys: GameKey[],
+  ) => {
     let row = db
       .select()
       .from(gameGroups)
@@ -146,7 +165,12 @@ export function seedDemo(file, now) {
   const horror = group(adminId, 'Horror', false, ['phasmo', 'dbd']);
   group(second, 'Default', true, ['elden', 'phasmo']);
 
-  const follow = (ownerId, s, mode, enabled = true) => {
+  const follow = (
+    ownerId: number,
+    s: Streamer,
+    mode: typeof follows.$inferInsert.gameMode,
+    enabled = true,
+  ) => {
     db.insert(streamers)
       .values({
         userId: s.id,
@@ -168,7 +192,11 @@ export function seedDemo(file, now) {
       .run();
   };
   const by = Object.fromEntries(STREAMERS.map((s) => [s.login, s]));
-  const assign = (s, groupIds, ownGames = []) => {
+  const assign = (
+    s: Streamer,
+    groupIds: number[],
+    ownGames: GameKey[] = [],
+  ) => {
     for (const groupId of groupIds)
       db.insert(streamerGroups)
         .values({ ownerId: adminId, userId: s.id, groupId })
@@ -200,15 +228,23 @@ export function seedDemo(file, now) {
     streamSeq += 137;
     return String(streamSeq);
   };
-  const live = { quietfox: 'elden', pixelmoth: 'acnh', lanternlane: 'phasmo' };
-  const liveSince = { quietfox: 95, pixelmoth: 42, lanternlane: 18 };
+  const live: Record<string, GameKey> = {
+    quietfox: 'elden',
+    pixelmoth: 'acnh',
+    lanternlane: 'phasmo',
+  };
+  const liveSince: Record<string, number> = {
+    quietfox: 95,
+    pixelmoth: 42,
+    lanternlane: 18,
+  };
   let day = 0;
   for (const s of STREAMERS) {
     for (const keys of HISTORY[s.login]) {
       day += 1;
       const startedAt = now - ((day % 6) + 0.4 + rand() * 0.5) * DAY;
       let cursor = startedAt;
-      const segments = [];
+      const segments: { k: GameKey; from: number; to: number }[] = [];
       for (const k of keys) {
         const len = (50 + Math.floor(rand() * 110)) * MIN;
         segments.push({ k, from: cursor, to: cursor + len });
@@ -321,14 +357,14 @@ export function seedDemo(file, now) {
   // Mail history. Failed mails belong to the second account so the admin
   // overview shows no attention item.
   const mail = (
-    ownerId,
-    s,
-    k,
-    title,
-    minutesAgo,
-    status,
-    extra = {},
-    streamId = `hist-${ownerId}-${s.id}-${minutesAgo}`,
+    ownerId: number,
+    s: Streamer,
+    k: GameKey,
+    title: string,
+    minutesAgo: number,
+    status: MailInsert['status'],
+    extra: Partial<MailInsert> = {},
+    streamId: string = `hist-${ownerId}-${s.id}-${minutesAgo}`,
   ) => {
     const gm = GAMES[k];
     const createdAt = now - minutesAgo * MIN;
@@ -360,7 +396,7 @@ export function seedDemo(file, now) {
       })
       .run();
   };
-  const sentRows = [
+  const sentRows: [string, GameKey, number][] = [
     ['quietfox', 'elden', 0.3],
     ['pixelmoth', 'acnh', 0.7],
     ['lanternlane', 'phasmo', 1.1],
@@ -376,20 +412,17 @@ export function seedDemo(file, now) {
   const liveSent = ['quietfox', 'pixelmoth', 'lanternlane'];
   for (const [login, k, hours] of sentRows) {
     const s = by[login];
-    const t =
-      liveSent.includes(login) && hours < 2
-        ? s.liveStream.title
-        : pick(TITLES[k]);
-    const isLive = liveSent.includes(login) && hours < 2;
+    const announced =
+      liveSent.includes(login) && hours < 2 ? s.liveStream : undefined;
     mail(
       adminId,
       s,
       k,
-      t,
+      announced?.title ?? pick(TITLES[k]),
       Math.round(hours * 60) + 5,
       'sent',
       {},
-      isLive ? s.liveStream.streamId : undefined,
+      announced?.streamId,
     );
   }
   mail(adminId, by.mossandmilk, 'acnh', pick(TITLES.acnh), 12, 'pending', {

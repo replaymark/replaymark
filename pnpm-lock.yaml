@@ -181,6 +181,9 @@ importers:
       '@semantic-release/release-notes-generator':
         specifier: 14.1.1
         version: 14.1.1(semantic-release@25.0.9(supports-color@7.2.0)(typescript@7.0.2))(supports-color@7.2.0)
+      '@types/node':
+        specifier: 24.19.1
+        version: 24.19.1
       conventional-changelog-conventionalcommits:
         specifier: 9.3.1
         version: 9.3.1

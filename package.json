@@ -18,11 +18,11 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json",
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "pnpm -r test",
-    "screenshots": "node scripts/screenshots/run.mjs",
+    "screenshots": "node scripts/screenshots/run.ts",
     "db:generate": "pnpm --filter @replaymark/server db:generate"
   },
   "devDependencies": {
@@ -31,6 +31,7 @@
     "@semantic-release/exec": "7.1.0",
     "@semantic-release/github": "12.0.10",
     "@semantic-release/release-notes-generator": "14.1.1",
+    "@types/node": "24.19.1",
     "conventional-changelog-conventionalcommits": "9.3.1",
     "playwright": "^1.64.0",
     "semantic-release": "25.0.9",
