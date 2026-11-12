@@ -21,6 +21,8 @@ pnpm dev                 # server with node --watch, Vite dev server on :5173
 
 The Vite dev server on `http://localhost:5173` proxies `/api` to the admin listener on `:8081`. The server does not load `.env` by itself; load it into your shell with `set -a; . ./.env; set +a` before `pnpm dev`. Set `ADMIN_COOKIE_SECURE=false` to log in over plain `http://localhost`. Required variables and defaults are defined in `apps/server/src/env.ts`.
 
+To fill a fresh development database with fictional demo data (streamers, follows, a few weeks of timeline history and notifications; offline, no Twitch, no mail), stop the server and run `node apps/server/src/cli.ts seed` (with `DATA_DIR` set). It refuses a database that already has streamers or follows unless you pass `--force`. Then start the server and run `node apps/server/src/cli.ts reset-password admin` to get a password for the account `admin`.
+
 ## The gate
 
 Every change must pass, from the repository root:
